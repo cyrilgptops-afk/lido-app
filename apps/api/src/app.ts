@@ -3,6 +3,8 @@ import helmet from 'helmet';
 import cors from 'cors';
 import pinoHttp from 'pino-http';
 import rateLimit from 'express-rate-limit';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger.config';
 
 import { env } from './lib/env';
 import { logger } from './lib/logger';
@@ -12,6 +14,8 @@ import { errorHandler, notFound } from './middleware/errorHandler';
 import { authRouter } from './routes/auth';
 import { botsRouter } from './routes/bots';
 import { servicesRouter } from './routes/services';
+import { adminRouter } from './routes/admin';
+import healthRouter from './routes/health';
 
 export function createApp() {
   const app = express();
@@ -59,15 +63,24 @@ export function createApp() {
 
   app.use(defaultLimiter);
 
-  // ─── Health Check ───────────────────────────────────────────────────────
-  app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+  // ─── API Documentation ──────────────────────────────────────────────────
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: 'Lido API Docs',
+  }));
+  app.get('/api-docs.json', (_req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(swaggerSpec);
   });
+
+  // ─── Health Check ───────────────────────────────────────────────────────
+  app.use(healthRouter);
 
   // ─── Routes ─────────────────────────────────────────────────────────────
   app.use('/auth', authLimiter, authRouter);
   app.use('/bots', botsRouter);
   app.use('/services', servicesRouter);
+  app.use('/admin', adminRouter);
 
   // ─── Error Handling ─────────────────────────────────────────────────────
   app.use(notFound);

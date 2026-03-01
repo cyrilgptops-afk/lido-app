@@ -1,3 +1,10 @@
 apps/api/node_modules/
 apps/web/node_modules/
 apps/web/.next/
+node_modules/
+.env
+.env.local
+dist/
+build/
+*.log
+.DS_Store

@@ -17,8 +17,55 @@ const oauthCallbackSchema = z.object({
 // ─── Routes ─────────────────────────────────────────────────────────────────
 
 /**
- * POST /auth/oauth/callback
- * Exchange an OAuth authorization code for an access token.
+ * @openapi
+ * /auth/oauth/callback:
+ *   post:
+ *     tags:
+ *       - Auth
+ *     summary: OAuth callback
+ *     description: Exchange OAuth authorization code for an access token
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - code
+ *             properties:
+ *               code:
+ *                 type: string
+ *                 description: OAuth authorization code
+ *                 example: "auth_code_12345"
+ *               state:
+ *                 type: string
+ *                 description: OAuth state parameter
+ *                 example: "random_state_xyz"
+ *     responses:
+ *       200:
+ *         description: Authentication successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         accessToken:
+ *                           type: string
+ *                           example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *                         tokenType:
+ *                           type: string
+ *                           example: "Bearer"
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       429:
+ *         $ref: '#/components/responses/RateLimitError'
  */
 authRouter.post(
   '/oauth/callback',
