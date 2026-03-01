@@ -398,7 +398,7 @@ export default function ChatPage() {
             sx={{
               p: 1.5,
               bgcolor: isBot ? '#f5f5f9' : '#696cff',
-              color: isBot ? 'text.primary' : '#fff',
+              color: isBot ? '#000' : '#fff',
               borderRadius: 2,
               border: isBot ? '1px solid #e7e7ff' : 'none',
             }}

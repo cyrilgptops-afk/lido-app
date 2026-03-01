@@ -2,24 +2,35 @@ import type { BotContext } from './context';
 
 /**
  * Safe Database Query Helper
- * 
- * Provides organization-scoped database access with whitelisted tables
+ *
+ * Provides organization-scoped database access with whitelisted tables.
+ * Add new tables here when bot scripts need access to them.
  */
 export class DatabaseQuery {
   private context: BotContext;
   private db: any;
+  private logger: any;
+
+  // Tables that bot scripts are allowed to SELECT from.
   private readonly ALLOWED_TABLES = [
+    // Core platform tables
     'users',
     'organizations',
     'bots',
     'user_organizations',
     'conversations',
     'messages',
+    // Commerce tables (used by support / e-commerce bots)
+    'orders',
+    'order_items',
+    'products',
+    'invoices',
   ];
 
-  constructor(context: BotContext, db: any) {
+  constructor(context: BotContext, db: any, logger?: any) {
     this.context = context;
     this.db = db;
+    this.logger = logger;
   }
 
   /**
@@ -36,8 +47,8 @@ export class DatabaseQuery {
       throw new Error(`Table "${table}" is not allowed for bot queries`);
     }
 
-    // Force organization_id / org_id filter depending on the table schema
-    const orgFilteredTables = ['bots', 'conversations'];
+    // Force organization_id filter for tables that have that column
+    const orgFilteredTables = ['bots', 'conversations', 'orders', 'order_items', 'products', 'invoices'];
     if (orgFilteredTables.includes(table)) {
       where.organization_id = this.context.organizationId;
     }
@@ -104,10 +115,14 @@ export class DatabaseQuery {
       throw new Error(`Table "${table}" is not allowed for bot queries`);
     }
 
-    // Force organization filter
-    const orgFilteredTables = ['bots', 'conversations', 'user_organizations'];
+    // Force organization filter — same rules as select()
+    const orgFilteredTables = ['bots', 'conversations', 'orders', 'order_items', 'products', 'invoices'];
     if (orgFilteredTables.includes(table)) {
       where.organization_id = this.context.organizationId;
+    }
+    // user_organizations uses org_id
+    if (table === 'user_organizations') {
+      where.org_id = this.context.organizationId;
     }
 
     const aggParts: string[] = [];
@@ -142,7 +157,11 @@ export class DatabaseQuery {
     try {
       const users = await this.select('users', ['*'], { uuid: this.context.userId });
       return users[0] || null;
-    } catch {
+    } catch (err) {
+      this.logger?.warn(
+        { err, userId: this.context.userId },
+        'DatabaseQuery.getCurrentUser failed — returning null',
+      );
       return null;
     }
   }

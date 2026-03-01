@@ -4,6 +4,9 @@ export { DatabaseQuery } from './DatabaseQuery';
 export { FormBuilder } from './FormBuilder';
 export { TableRenderer } from './TableRenderer';
 export { BotUtils } from './BotUtils';
+export { BotLogger, getBotLogger } from './BotLogger';
+
+export type { BotLogEntry, BotLoggerOptions } from './BotLogger';
 
 export type {
   BotContext,

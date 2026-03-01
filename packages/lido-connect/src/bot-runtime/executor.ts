@@ -10,11 +10,15 @@ import { DatabaseQuery } from './DatabaseQuery';
 import { FormBuilder } from './FormBuilder';
 import { TableRenderer } from './TableRenderer';
 import { BotUtils } from './BotUtils';
+import { getBotLogger } from './BotLogger';
+import type { BotLoggerOptions } from './BotLogger';
 
 /**
  * Bot Script Executor
- * 
- * Executes bot scripts in a sandboxed VM environment with timeout
+ *
+ * Executes bot scripts in a sandboxed VM environment with timeout.
+ * Every load / execution / error is written to a rolling daily log file
+ * at  <cwd>/logs/bots/bot-YYYY-MM-DD.log  (one JSON line per event).
  */
 export class BotScriptExecutor {
   private logger?: any;
@@ -22,10 +26,17 @@ export class BotScriptExecutor {
   private scriptCache: Map<string, BotScriptModule> = new Map();
   private readonly EXECUTION_TIMEOUT = 5000; // 5 seconds
   private readonly ALLOWED_MODULES = ['crypto', 'util'];
+  /** File-based structured logger — one JSON line per event */
+  private readonly botLogger = getBotLogger();
 
-  constructor(db: any, logger?: any) {
+  constructor(db: any, logger?: any, botLoggerOptions?: BotLoggerOptions) {
     this.db = db;
     this.logger = logger;
+    // Re-init the singleton with the caller's options (logsDir, pinoLogger)
+    // on first construction so the API gateway can control the log directory.
+    if (botLoggerOptions || logger) {
+      getBotLogger({ pinoLogger: logger, ...botLoggerOptions });
+    }
   }
 
   /**
@@ -66,6 +77,7 @@ export class BotScriptExecutor {
       this.scriptCache.set(botId, botModule);
 
       this.logger?.info({ botId, name: botModule.name, version: botModule.version }, 'Bot script loaded successfully');
+      this.botLogger.logLoad({ botId, botName: botModule.name, version: botModule.version });
     } catch (error) {
       this.logger?.error({ error, botId }, 'Failed to load bot script');
       throw error;
@@ -99,6 +111,7 @@ export class BotScriptExecutor {
       if (!handler && botModule.intents['*']) {
         handler = botModule.intents['*'];
         this.logger?.info({ botId, intent }, 'Using wildcard handler for unknown intent');
+        this.botLogger.logIntentFallback({ botId, context, intent });
       }
 
       if (!handler) {
@@ -108,7 +121,7 @@ export class BotScriptExecutor {
       // Create helper instances
       const helpers: BotHelpers = {
         suggestions: new SmartSuggestion(context),
-        db: new DatabaseQuery(context, this.db),
+        db: new DatabaseQuery(context, this.db, this.logger),
         form: new FormBuilder(context),
         table: new TableRenderer(context),
         utils: new BotUtils(context),
@@ -122,25 +135,42 @@ export class BotScriptExecutor {
 
       const executionTime = Date.now() - startTime;
 
-      // Log execution
+      // Log execution to DB
       await this.logExecution(botId, context, intent, response, executionTime, true);
+
+      // Log execution to file
+      this.botLogger.logExecution({
+        botId,
+        botName: botModule.name,
+        context,
+        intent,
+        nlpResolved:    context.metadata?.nlpResolved,
+        nlpConfidence:  context.metadata?.nlpConfidence,
+        response,
+        executionTimeMs: executionTime,
+        success: true,
+      });
 
       return response;
     } catch (error) {
       const executionTime = Date.now() - startTime;
       
+      const errMsg = error instanceof Error ? error.message : 'Unknown error';
       this.logger?.error({ error, botId, intent }, 'Bot execution failed');
-      
-      // Log failed execution
-      await this.logExecution(
+
+      // Log failed execution to DB
+      await this.logExecution(botId, context, intent, null, executionTime, false, errMsg);
+
+      // Log failed execution to file
+      this.botLogger.logExecution({
         botId,
         context,
         intent,
-        null,
-        executionTime,
-        false,
-        error instanceof Error ? error.message : 'Unknown error'
-      );
+        response: null,
+        executionTimeMs: executionTime,
+        success: false,
+        error: errMsg,
+      });
 
       // Return error response
       return {

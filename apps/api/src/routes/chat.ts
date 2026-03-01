@@ -9,6 +9,7 @@
  *  5. Broadcasts both messages to the conversation room via Socket.IO
  */
 
+import path from 'path';
 import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/authenticate';
@@ -49,7 +50,9 @@ const SendMessageSchema = z.object({
 
 // ─── Bot script executor singleton (per-script cache lives inside executor) ──
 
-const executor = new BotScriptExecutor(db, logger);
+const executor = new BotScriptExecutor(db, logger, {
+  logsDir: path.join(__dirname, '..', '..', 'logs', 'bots'),
+});
 
 // ── NLP client (lazy init — fails silently so chat works without Rasa) ────────
 let _nlpClient: NLPAdapter | null = null;
@@ -274,6 +277,7 @@ router.post('/messages', authenticate, async (req, res) => {
         // ── Try Rasa NLP first (graceful fallback to keyword detection) ───
         let nlpIntent: string | null = null;
         let nlpEntities: Array<{ entity: string; value: string }> = [];
+        let nlpConfidence: number | undefined;
         const nlp = await tryGetNLPClient();
         if (nlp) {
           const nlpResult = await nlp.parseMessage(content, convUuid).catch(() => null);
@@ -283,10 +287,11 @@ router.post('/messages', authenticate, async (req, res) => {
             nlpResult.data.intent.confidence >= communicationConfig.nlp.confidenceThreshold &&
             availableIntents.includes(nlpResult.data.intent.name)
           ) {
-            nlpIntent = nlpResult.data.intent.name;
-            nlpEntities = nlpResult.data.entities.map((e) => ({ entity: e.entity, value: e.value }));
+            nlpIntent     = nlpResult.data.intent.name;
+            nlpConfidence = nlpResult.data.intent.confidence;
+            nlpEntities   = nlpResult.data.entities.map((e) => ({ entity: e.entity, value: e.value }));
             logger.info(
-              { intent: nlpIntent, confidence: nlpResult.data.intent.confidence, entities: nlpEntities.length },
+              { intent: nlpIntent, confidence: nlpConfidence, entities: nlpEntities.length },
               'Intent resolved via Rasa NLP',
             );
           }
@@ -303,6 +308,10 @@ router.post('/messages', authenticate, async (req, res) => {
           userMessage: content,
           intent: detectedIntent,
           entities: nlpEntities,
+          metadata: {
+            nlpResolved:   nlpIntent !== null,
+            nlpConfidence: nlpConfidence,
+          },
         };
 
         // ── Execute bot script ───────────────────────────────────────────

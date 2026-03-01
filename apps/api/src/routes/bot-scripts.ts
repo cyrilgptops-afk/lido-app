@@ -1,3 +1,4 @@
+import path from 'path';
 import { Router } from 'express';
 import { authenticate, requireRole } from '../middleware/authenticate';
 import { db } from '../lib/db';
@@ -9,7 +10,9 @@ import multer from 'multer';
 const router = Router();
 const storage = getStorageClient();
 const botStorage = new BotScriptStorageService(storage, db, logger);
-const botExecutor = new BotScriptExecutor(db, logger);
+const botExecutor = new BotScriptExecutor(db, logger, {
+  logsDir: path.join(__dirname, '..', '..', 'logs', 'bots'),
+});
 const upload = multer({ storage: multer.memoryStorage() });
 
 // ─── Create Bot Script ──────────────────────────────────────────────────────

@@ -51,6 +51,10 @@ module.exports = {
       'track shipment', 'track my package', 'track package',
       'shipping update', 'where is my package', 'delivery status',
     ],
+    my_orders: [
+      'my orders', 'all orders', 'order history', 'recent orders',
+      'list orders', 'show orders', 'past orders', 'previous orders',
+    ],
     request_refund: [
       'refund', 'request refund', 'get my money back', 'return',
       'return item', 'cancel order', 'money back', 'reimburse',
@@ -103,6 +107,7 @@ module.exports = {
       return {
         message: `👋 Hi ${name}! I'm your NLP-powered support assistant.\n\nI understand natural language — just describe what you need and I'll help right away.`,
         suggestions: [
+          'My recent orders',
           'Check order status',
           'Track my shipment',
           'Billing & invoices',
@@ -462,6 +467,101 @@ module.exports = {
       };
     },
 
+    // ── My orders (mock data demo) ──────────────────────────────────────
+    /**
+     * Returns a table of recent orders filled with mock sample data.
+     * Demonstrates table rendering without requiring a real orders table.
+     *
+     * Keywords: 'my orders', 'order history', 'recent orders', etc.
+     */
+    my_orders: async (context, helpers) => {
+      const name = 'messi'
+
+      // ── Sample data — replace with helpers.db.select('orders', …) when live ──
+      const mockOrders = [
+        {
+          order_number: 'ORD-10045',
+          status:       'delivered',
+          total_amount: 129.99,
+          item_count:   3,
+          created_at:   new Date(Date.now() - 15 * 86400000).toISOString(),
+          updated_at:   new Date(Date.now() -  2 * 86400000).toISOString(),
+        },
+        {
+          order_number: 'ORD-10038',
+          status:       'shipped',
+          total_amount:  74.50,
+          item_count:   1,
+          created_at:   new Date(Date.now() - 10 * 86400000).toISOString(),
+          updated_at:   new Date(Date.now() -  1 * 86400000).toISOString(),
+        },
+        {
+          order_number: 'ORD-10031',
+          status:       'processing',
+          total_amount:  49.00,
+          item_count:   2,
+          created_at:   new Date(Date.now() -  5 * 86400000).toISOString(),
+          updated_at:   new Date(Date.now() -  5 * 86400000).toISOString(),
+        },
+        {
+          order_number: 'ORD-10022',
+          status:       'cancelled',
+          total_amount:  19.95,
+          item_count:   1,
+          created_at:   new Date(Date.now() - 30 * 86400000).toISOString(),
+          updated_at:   new Date(Date.now() - 28 * 86400000).toISOString(),
+        },
+        {
+          order_number: 'ORD-10015',
+          status:       'delivered',
+          total_amount: 214.00,
+          item_count:   5,
+          created_at:   new Date(Date.now() - 45 * 86400000).toISOString(),
+          updated_at:   new Date(Date.now() - 40 * 86400000).toISOString(),
+        },
+      ];
+
+      const statusEmoji = {
+        pending:    '🕐',
+        processing: '⚙️',
+        shipped:    '📦',
+        delivered:  '✅',
+        cancelled:  '❌',
+      };
+
+      const ordersTable = helpers.table
+        .setTitle('Recent Orders')
+        .addColumn('order_number', 'Order #',   'text')
+        .addColumn('status',       'Status',    'badge')
+        .addColumn('item_count',   'Items',     'number')
+        .addColumn('total_amount', 'Total',     'number')
+        .addColumn('placed',       'Placed',    'date')
+        .addColumn('updated',      'Updated',   'date')
+        .setRows(
+          mockOrders.map((o) => ({
+            order_number: o.order_number,
+            status:       `${statusEmoji[o.status] ?? '📋'} ${o.status}`,
+            item_count:   o.item_count,
+            total_amount: helpers.utils.formatCurrency(o.total_amount),
+            placed:       helpers.utils.formatDate(o.created_at, 'short'),
+            updated:      helpers.utils.formatDate(o.updated_at, 'relative'),
+          }))
+        )
+        .build();
+
+      return {
+        message: `Here are your recent orders, ${name}:`,
+        table: ordersTable,
+        actions: [
+          { type: 'button', label: '📦 Check order status', value: 'order_status'  },
+          { type: 'button', label: '💳 Request a refund',   value: 'request_refund' },
+          { type: 'button', label: '🚚 Track a shipment',   value: 'track_shipment' },
+        ],
+        suggestions: ['Check a specific order', 'Request refund', 'Track shipment'],
+        metadata: { intent: 'my_orders', orderCount: mockOrders.length },
+      };
+    },
+
     // ── Fallback ──────────────────────────────────────────────────────────
     /**
      * Triggered when no intent keyword matched AND the NLP model
@@ -477,11 +577,12 @@ module.exports = {
       return {
         message: `I didn't quite understand your message${quoteStr}. Here are some things I can help with:`,
         actions: [
-          { type: 'button', label: '📦 Order Status',     value: 'order_status' },
+          { type: 'button', label: '� My Orders',        value: 'my_orders'      },
+          { type: 'button', label: '📦 Order Status',     value: 'order_status'   },
           { type: 'button', label: '🚚 Track Shipment',   value: 'track_shipment' },
           { type: 'button', label: '💳 Billing',          value: 'billing_inquiry' },
-          { type: 'button', label: '🐛 Report a Problem', value: 'technical' },
-          { type: 'button', label: '🧑 Talk to an Agent', value: 'escalate' },
+          { type: 'button', label: '🐛 Report a Problem', value: 'technical'      },
+          { type: 'button', label: '🧑 Talk to an Agent', value: 'escalate'       },
         ],
         suggestions: helpers.suggestions.generate('greet', 3),
         metadata: { fallback: true, originalMessage: context.userMessage },
