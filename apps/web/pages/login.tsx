@@ -1,5 +1,7 @@
 import Head from "next/head";
 import NextLink from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/router";
 import {
   Box,
   Typography,
@@ -8,11 +10,50 @@ import {
   CardContent,
   Divider,
   Stack,
-  Link
+  Link,
+  TextField,
+  Alert,
 } from "@mui/material";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
+import axios from "axios";
 
 export default function LoginPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState("admin@lido.com");
+  const [password, setPassword] = useState("password");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+      const response = await axios.post(`${baseUrl}/auth/login`, {
+        email,
+        password,
+      });
+
+      if (response.data.success) {
+        const { accessToken, user } = response.data.data;
+        localStorage.setItem("token", accessToken);
+        localStorage.setItem("user", JSON.stringify(user));
+        
+        // Redirect based on role
+        if (user.role === "admin") {
+          router.push("/admin");
+        } else {
+          router.push("/dashboard");
+        }
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || "Login failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
   return (
     <>
       <Head>
@@ -54,12 +95,58 @@ export default function LoginPage() {
 
           <Card variant="outlined">
             <CardContent sx={{ p: 3 }}>
+              {error && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {error}
+                </Alert>
+              )}
+              
+              <form onSubmit={handleLogin}>
+                <Stack spacing={2}>
+                  <TextField
+                    label="Email"
+                    type="email"
+                    fullWidth
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    helperText="Use admin@lido.com for admin access"
+                  />
+                  <TextField
+                    label="Password"
+                    type="password"
+                    fullWidth
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    helperText="Any password works in dev mode"
+                  />
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    color="primary"
+                    fullWidth
+                    size="large"
+                    disabled={loading}
+                  >
+                    {loading ? "Signing in..." : "Sign in"}
+                  </Button>
+                </Stack>
+              </form>
+
+              <Divider sx={{ my: 2 }}>
+                <Typography variant="caption" color="text.secondary">
+                  or
+                </Typography>
+              </Divider>
+
               <Stack spacing={2}>
                 <Button
                   variant="outlined"
                   color="inherit"
                   fullWidth
                   size="large"
+                  disabled
                 >
                   Continue with Google
                 </Button>
@@ -68,21 +155,9 @@ export default function LoginPage() {
                   color="inherit"
                   fullWidth
                   size="large"
+                  disabled
                 >
                   Continue with GitHub
-                </Button>
-                <Divider>
-                  <Typography variant="caption" color="text.secondary">
-                    or
-                  </Typography>
-                </Divider>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  fullWidth
-                  size="large"
-                >
-                  Sign in with SSO
                 </Button>
               </Stack>
             </CardContent>

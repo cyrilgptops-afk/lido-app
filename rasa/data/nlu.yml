@@ -1,0 +1,300 @@
+version: "3.1"
+
+nlu:
+
+# ── Generic conversation ───────────────────────────────────────────────────────
+
+  - intent: greet
+    examples: |
+      - hey
+      - hello
+      - hi
+      - hello there
+      - good morning
+      - good evening
+      - hey there
+      - hi there
+      - greetings
+      - howdy
+      - what's up
+      - yo
+
+  - intent: goodbye
+    examples: |
+      - bye
+      - goodbye
+      - see you later
+      - see you
+      - talk to you later
+      - have a good day
+      - catch you later
+      - I'm done
+      - that's all
+      - thanks bye
+
+  - intent: affirm
+    examples: |
+      - yes
+      - yeah
+      - yep
+      - sure
+      - correct
+      - that's right
+      - absolutely
+      - of course
+      - sounds good
+      - ok
+      - okay
+
+  - intent: deny
+    examples: |
+      - no
+      - nope
+      - never
+      - not at all
+      - I don't think so
+      - no way
+      - cancel
+      - stop
+      - nevermind
+
+  - intent: help
+    examples: |
+      - help
+      - I need help
+      - can you help me
+      - help me please
+      - I need assistance
+      - assist me
+      - support
+      - what can you do
+      - show me the menu
+      - what are my options
+
+  - intent: thank
+    examples: |
+      - thank you
+      - thanks
+      - thanks a lot
+      - appreciate it
+      - thank you so much
+      - thanks for your help
+      - that was helpful
+
+  - intent: bot_challenge
+    examples: |
+      - are you a bot?
+      - are you human?
+      - am I talking to a bot?
+      - am I talking to a human?
+      - who are you
+
+# ── Account ────────────────────────────────────────────────────────────────────
+
+  - intent: account_help
+    examples: |
+      - I have a problem with my account
+      - my account is not working
+      - account issue
+      - help with my account
+      - can't access my account
+      - account locked
+      - manage my account
+      - account settings
+      - I need account help
+
+  - intent: view_account
+    examples: |
+      - show my account
+      - view my account
+      - my account details
+      - account information
+      - check my account
+      - what's in my account
+      - account info
+      - account overview
+      - show account details
+      - my profile details
+
+  - intent: reset_password
+    examples: |
+      - reset my password
+      - forgot my password
+      - I forgot my password
+      - change my password
+      - lost my password
+      - password reset
+      - I can't log in
+      - need a new password
+      - recover my password
+      - reset password link
+
+  - intent: update_email
+    examples: |
+      - change my email
+      - update my email
+      - new email address
+      - I want to change my email
+      - update email address
+      - my email has changed
+      - edit email
+      - modify email
+
+  - intent: update_profile
+    examples: |
+      - update my profile
+      - edit my profile
+      - change my name
+      - update my name
+      - change my phone number
+      - edit profile information
+      - update profile details
+      - my full name is wrong
+      - change timezone
+
+  - intent: security_settings
+    examples: |
+      - security settings
+      - enable two factor
+      - set up 2fa
+      - two-factor authentication
+      - mfa setup
+      - view login history
+      - manage sessions
+      - active sessions
+      - sign out everywhere
+      - check security
+
+  - intent: delete_account
+    examples: |
+      - delete my account
+      - close my account
+      - remove my account
+      - deactivate my account
+      - cancel my account
+      - I want to delete my account
+      - permanent deletion
+      - remove all my data
+
+# ── Orders ─────────────────────────────────────────────────────────────────────
+
+  - intent: order_status
+    examples: |
+      - where is my order
+      - order status
+      - check my order
+      - what's the status of my order
+      - order update
+      - I want to check order [ORD-12345](order_id)
+      - status of order [ORD-99887](order_id)
+      - my order [ORD-55512](order_id) hasn't arrived
+      - check order number [ORD-10001](order_id)
+      - what happened to order [ORD-20202](order_id)
+      - look up order [ORD-33344](order_id)
+      - has my order shipped
+      - when will my order arrive
+
+  - intent: track_shipment
+    examples: |
+      - track my shipment
+      - track my package
+      - where is my package
+      - shipment tracking
+      - delivery status
+      - track [1Z999AA10123456784](tracking_number)
+      - tracking number [9400111899223397622436](tracking_number)
+      - my [FedEx](carrier) tracking is [449044304137821](tracking_number)
+      - track via [UPS](carrier)
+      - track [1Z4V87W30343829431](tracking_number) on [UPS](carrier)
+      - where is my [DHL](carrier) package
+      - has my parcel been shipped
+      - when will it be delivered
+
+  - intent: request_refund
+    examples: |
+      - I want a refund
+      - request a refund
+      - get my money back
+      - return my order
+      - return item
+      - cancel my order
+      - I want to return this
+      - issue a refund for order [ORD-12345](order_id)
+      - refund [ORD-77221](order_id)
+      - the item was [damaged](reason)
+      - I received the [wrong item](reason)
+      - item [not received](reason)
+      - money back guarantee
+      - I'm not happy with the product
+
+# ── Billing ────────────────────────────────────────────────────────────────────
+
+  - intent: billing_inquiry
+    examples: |
+      - billing question
+      - how much does it cost
+      - what's the price
+      - payment issue
+      - I was charged incorrectly
+      - cancel my subscription
+      - upgrade my plan
+      - view my invoices
+      - billing history
+      - payment history
+      - download invoice
+      - update payment method
+      - change credit card
+
+# ── Products ───────────────────────────────────────────────────────────────────
+
+  - intent: product_inquiry
+    examples: |
+      - tell me about [wireless headphones](product_name)
+      - what are the specs of [MacBook Pro](product_name)
+      - compare [iPhone 16](product_name) and [Samsung Galaxy S25](product_name)
+      - reviews for [Nike Air Max](product_name)
+      - I'm interested in [standing desk](product_name)
+      - SKU [WH-1000XM5](product_sku)
+      - do you have [blue sneakers](product_name)
+      - product details for [ABC-123](product_sku)
+      - is [leather wallet](product_name) in stock
+      - how much is [coffee maker](product_name)
+
+# ── Technical ──────────────────────────────────────────────────────────────────
+
+  - intent: technical
+    examples: |
+      - I found a bug
+      - there's an error
+      - something is broken
+      - the app is not working
+      - I'm getting error [404](error_code)
+      - error code [500](error_code)
+      - [E_NOT_FOUND](error_code) error
+      - I can't upload files
+      - the page is blank
+      - feature request
+      - I have a feature idea
+      - can you add [dark mode](feature)
+      - I'd love [bulk export](feature)
+      - report a bug
+      - something is wrong
+      - it keeps crashing
+      - performance issue
+      - slow loading
+
+# ── Escalation ─────────────────────────────────────────────────────────────────
+
+  - intent: escalate
+    examples: |
+      - talk to a human
+      - I want a real person
+      - connect me to an agent
+      - live agent please
+      - speak to someone
+      - human support
+      - I need to speak to a person
+      - escalate my issue
+      - transfer me
+      - let me talk to support
+      - real person please

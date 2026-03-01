@@ -6,7 +6,7 @@ import { errorResponse } from '../lib/response';
 export interface JwtPayload {
   sub: string;       // userId
   email: string;
-  role: 'user' | 'admin';
+  role: 'user' | 'admin' | 'agent';
   iat?: number;
   exp?: number;
 }

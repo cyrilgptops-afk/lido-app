@@ -1,0 +1,98 @@
+version: "3.1"
+
+rules:
+
+  - rule: Greet
+    steps:
+      - intent: greet
+      - action: utter_greet
+
+  - rule: Say goodbye anytime the user says goodbye
+    steps:
+      - intent: goodbye
+      - action: utter_goodbye
+
+  - rule: Say 'I am a bot' anytime the user challenges
+    steps:
+      - intent: bot_challenge
+      - action: utter_iamabot
+
+  - rule: Thank
+    steps:
+      - intent: thank
+      - action: utter_thank
+
+  - rule: Help
+    steps:
+      - intent: help
+      - action: utter_help
+
+  - rule: Account help
+    steps:
+      - intent: account_help
+      - action: utter_account_help
+
+  - rule: View account
+    steps:
+      - intent: view_account
+      - action: utter_view_account
+
+  - rule: Reset password
+    steps:
+      - intent: reset_password
+      - action: utter_reset_password
+
+  - rule: Update email
+    steps:
+      - intent: update_email
+      - action: utter_update_email
+
+  - rule: Update profile
+    steps:
+      - intent: update_profile
+      - action: utter_update_profile
+
+  - rule: Security settings
+    steps:
+      - intent: security_settings
+      - action: utter_security_settings
+
+  - rule: Delete account
+    steps:
+      - intent: delete_account
+      - action: utter_delete_account
+
+  - rule: Order status
+    steps:
+      - intent: order_status
+      - action: utter_order_status
+
+  - rule: Track shipment
+    steps:
+      - intent: track_shipment
+      - action: utter_track_shipment
+
+  - rule: Request refund
+    steps:
+      - intent: request_refund
+      - action: utter_request_refund
+
+  - rule: Billing inquiry
+    steps:
+      - intent: billing_inquiry
+      - action: utter_billing_inquiry
+
+  - rule: Product inquiry
+    steps:
+      - intent: product_inquiry
+      - action: utter_product_inquiry
+
+  - rule: Technical support
+    steps:
+      - intent: technical
+      - action: utter_technical
+
+  - rule: Escalate to agent
+    steps:
+      - intent: escalate
+      - action: utter_escalate

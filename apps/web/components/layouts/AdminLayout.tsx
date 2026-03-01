@@ -3,7 +3,7 @@
  * Navigation and layout for admin pages
  */
 
-import React, { ReactNode, useState } from 'react';
+import React, { ReactNode, useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import {
   Box,
@@ -27,6 +27,8 @@ import {
   Dashboard as DashboardIcon,
   Settings as SettingsIcon,
   Menu as MenuIcon,
+  SmartToy as SmartToyIcon,
+  Chat as ChatIcon,
 } from '@mui/icons-material';
 
 const drawerWidth = 260;
@@ -88,12 +90,18 @@ const menuItems = [
   { label: 'Users', icon: <PeopleIcon />, path: '/admin/users' },
   { label: 'Organizations', icon: <BusinessIcon />, path: '/admin/organizations' },
   { label: 'Members', icon: <GroupsIcon />, path: '/admin/members' },
+  { label: 'Bot Scripts', icon: <SmartToyIcon />, path: '/admin/bots' },
   { label: 'Settings', icon: <SettingsIcon />, path: '/admin/settings' },
 ];
 
 export default function AdminLayout({ children, title }: AdminLayoutProps) {
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -251,47 +259,50 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
         <Toolbar sx={{ minHeight: { xs: 56, sm: 64 } }} />
         <Box sx={{ overflow: 'auto', py: 2 }}>
           <List sx={{ px: 2 }}>
-            {menuItems.map((item) => (
-              <ListItem key={item.path} disablePadding sx={{ mb: 0.5 }}>
-                <ListItemButton
-                  selected={router.pathname === item.path}
-                  onClick={() => router.push(item.path)}
-                  sx={{
-                    borderRadius: adminTheme.spacing.borderRadius,
-                    minHeight: 40,
-                    '&.Mui-selected': {
-                      bgcolor: adminTheme.colors.primaryLight,
-                      '& .MuiListItemIcon-root': {
-                        color: adminTheme.colors.primary,
+            {menuItems.map((item) => {
+              const isSelected = mounted && router.pathname === item.path;
+              return (
+                <ListItem key={item.path} disablePadding sx={{ mb: 0.5 }}>
+                  <ListItemButton
+                    selected={isSelected}
+                    onClick={() => router.push(item.path)}
+                    sx={{
+                      borderRadius: adminTheme.spacing.borderRadius,
+                      minHeight: 40,
+                      '&.Mui-selected': {
+                        bgcolor: adminTheme.colors.primaryLight,
+                        '& .MuiListItemIcon-root': {
+                          color: adminTheme.colors.primary,
+                        },
+                        '&:hover': {
+                          bgcolor: adminTheme.colors.primaryLighter,
+                        },
                       },
                       '&:hover': {
-                        bgcolor: adminTheme.colors.primaryLighter,
+                        bgcolor: adminTheme.colors.bgHoverLight,
                       },
-                    },
-                    '&:hover': {
-                      bgcolor: adminTheme.colors.bgHoverLight,
-                    },
-                  }}
-                >
-                  <ListItemIcon
-                    sx={{
-                      minWidth: 36,
-                      color: adminTheme.colors.secondary,
                     }}
                   >
-                    {item.icon}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={item.label}
-                    primaryTypographyProps={{
-                      fontSize: adminTheme.typography.fontSize.sm,
-                      fontWeight: router.pathname === item.path ? adminTheme.typography.fontWeight.medium : adminTheme.typography.fontWeight.normal,
-                      color: router.pathname === item.path ? adminTheme.colors.primary : adminTheme.colors.textDark,
-                    }}
-                  />
-                </ListItemButton>
-              </ListItem>
-            ))}
+                    <ListItemIcon
+                      sx={{
+                        minWidth: 36,
+                        color: adminTheme.colors.secondary,
+                      }}
+                    >
+                      {item.icon}
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={item.label}
+                      primaryTypographyProps={{
+                        fontSize: adminTheme.typography.fontSize.sm,
+                        fontWeight: isSelected ? adminTheme.typography.fontWeight.medium : adminTheme.typography.fontWeight.normal,
+                        color: isSelected ? adminTheme.colors.primary : adminTheme.colors.textDark,
+                      }}
+                    />
+                  </ListItemButton>
+                </ListItem>
+              );
+            })}
           </List>
         </Box>
       </Drawer>

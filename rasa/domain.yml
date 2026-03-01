@@ -1,0 +1,145 @@
+version: "3.1"
+
+intents:
+  # generic
+  - greet
+  - goodbye
+  - affirm
+  - deny
+  - help
+  - thank
+  - bot_challenge
+  # account
+  - account_help
+  - view_account
+  - reset_password
+  - update_email
+  - update_profile
+  - security_settings
+  - delete_account
+  # orders
+  - order_status
+  - track_shipment
+  - request_refund
+  # billing / products / tech / escalate
+  - billing_inquiry
+  - product_inquiry
+  - technical
+  - escalate
+
+entities:
+  - order_id
+  - tracking_number
+  - carrier
+  - product_name
+  - product_sku
+  - error_code
+  - feature
+  - reason
+
+slots:
+  order_id:
+    type: text
+    mappings:
+      - type: from_entity
+        entity: order_id
+  tracking_number:
+    type: text
+    mappings:
+      - type: from_entity
+        entity: tracking_number
+  carrier:
+    type: text
+    mappings:
+      - type: from_entity
+        entity: carrier
+  product_name:
+    type: text
+    mappings:
+      - type: from_entity
+        entity: product_name
+  product_sku:
+    type: text
+    mappings:
+      - type: from_entity
+        entity: product_sku
+  error_code:
+    type: text
+    mappings:
+      - type: from_entity
+        entity: error_code
+  feature:
+    type: text
+    mappings:
+      - type: from_entity
+        entity: feature
+  reason:
+    type: text
+    mappings:
+      - type: from_entity
+        entity: reason
+
+responses:
+  utter_greet:
+    - text: "Hello! Welcome to Lido Connect. How can I help you today?"
+    - text: "Hi there! I'm here to assist you. What can I do for you?"
+
+  utter_goodbye:
+    - text: "Goodbye! Have a great day!"
+    - text: "See you later! Feel free to reach out anytime."
+
+  utter_help:
+    - text: "I can help with order status, shipment tracking, billing, account management, and technical issues. What do you need?"
+
+  utter_thank:
+    - text: "You're welcome! Happy to help!"
+    - text: "Anytime! Let me know if you need anything else."
+
+  utter_iamabot:
+    - text: "I am Lido Connect, your AI-powered support assistant. How can I help?"
+
+  utter_account_help:
+    - text: "I can help with account-related issues. What seems to be the problem?"
+
+  utter_view_account:
+    - text: "I'll pull up your account details right away."
+
+  utter_reset_password:
+    - text: "I can help you reset your password. Please provide your email address."
+
+  utter_update_email:
+    - text: "I can help you update your email address. Please verify your identity first."
+
+  utter_update_profile:
+    - text: "I can help you update your profile information."
+
+  utter_security_settings:
+    - text: "Let me show you your security settings."
+
+  utter_delete_account:
+    - text: "Account deletion is permanent. Are you sure you want to proceed?"
+
+  utter_order_status:
+    - text: "I'll look up the status of your order."
+
+  utter_track_shipment:
+    - text: "I'll track that shipment for you."
+
+  utter_request_refund:
+    - text: "I can process a refund request for you. Please provide your order details."
+
+  utter_billing_inquiry:
+    - text: "I can help with billing questions. What would you like to know?"
+
+  utter_product_inquiry:
+    - text: "I'll look up that product information for you."
+
+  utter_technical:
+    - text: "I understand you need technical support. Can you describe the issue?"
+
+  utter_escalate:
+    - text: "Connecting you to a live agent who can better assist you."
+
+session_config:
+  session_expiration_time: 60
+  carry_over_slots_to_new_session: true

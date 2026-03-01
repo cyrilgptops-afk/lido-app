@@ -5,8 +5,11 @@ import { redis } from './lib/redis';
 import { db } from './lib/db';
 import { cacheConfig, storageConfig } from './config';
 import { getStorageClient } from './lib/storage';
+import { createServer } from 'http';
+import { initializeSocketIO } from './socket';
 
 const app = createApp();
+const httpServer = createServer(app);
 
 // ─── Initialize Services ───────────────────────────────────────────────────
 
@@ -49,8 +52,16 @@ async function startServer() {
     logger.warn({ error }, 'Storage initialization error - continuing without storage');
   }
 
-  const server = app.listen(env.PORT, () => {
-    logger.info({ port: env.PORT, env: env.NODE_ENV }, '🚀 API server started');
+  // Initialize Socket.IO for Lido Connect
+  try {
+    const io = initializeSocketIO(httpServer);
+    logger.info('Socket.IO initialized for Lido Connect');
+  } catch (error) {
+    logger.error({ error }, 'Failed to initialize Socket.IO');
+  }
+
+  const server = httpServer.listen(env.PORT, () => {
+    logger.info({ port: env.PORT, env: env.NODE_ENV }, '🚀 Lido Connect API server started');
   });
 
   return server;

@@ -16,6 +16,9 @@ import { botsRouter } from './routes/bots';
 import { servicesRouter } from './routes/services';
 import { adminRouter } from './routes/admin';
 import healthRouter from './routes/health';
+import chatRouter from './routes/chat';
+import callsRouter from './routes/calls';
+import botScriptsRouter from './routes/bot-scripts';
 
 export function createApp() {
   const app = express();
@@ -81,6 +84,9 @@ export function createApp() {
   app.use('/bots', botsRouter);
   app.use('/services', servicesRouter);
   app.use('/admin', adminRouter);
+  app.use('/chat', chatRouter);
+  app.use('/calls', callsRouter);
+  app.use('/bot-scripts', botScriptsRouter);
 
   // ─── Error Handling ─────────────────────────────────────────────────────
   app.use(notFound);

@@ -19,6 +19,7 @@ import ExtensionRoundedIcon from "@mui/icons-material/ExtensionRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import StorefrontRoundedIcon from "@mui/icons-material/StorefrontRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
+import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
@@ -28,6 +29,7 @@ const LIDO_BLUE = "#2362E8";
 const NAV_ITEMS = [
   { href: "/dashboard",               label: "Overview",      icon: <DashboardRoundedIcon  fontSize="small" /> },
   { href: "/bots",                    label: "Bots",          icon: <SmartToyRoundedIcon   fontSize="small" /> },
+  { href: "/chat",                    label: "Chat",          icon: <ChatRoundedIcon       fontSize="small" /> },
   { href: "/integrations",            label: "Integrations",  icon: <ExtensionRoundedIcon  fontSize="small" /> },
   { href: "/storefront",              label: "Storefront",    icon: <StorefrontRoundedIcon fontSize="small" /> },
   { href: "/admin/storefront/config", label: "SF Config",     icon: <TuneRoundedIcon       fontSize="small" /> },

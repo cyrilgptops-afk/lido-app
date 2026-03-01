@@ -22,6 +22,30 @@ const envSchema = z.object({
   MINIO_BUCKET_UPLOADS: z.string().default('lido-uploads'),
   MINIO_BUCKET_ASSETS: z.string().default('lido-assets'),
   MINIO_BUCKET_CACHE: z.string().default('lido-cache'),
+  
+  // Lido Connect - NLP Configuration
+  NLP_ADAPTER: z.string().default('rasa'),
+  RASA_URL: z.string().url().default('http://localhost:5005'),
+  RASA_TOKEN: z.string().optional(),
+  NLP_TIMEOUT: z.coerce.number().default(10000),
+  NLP_RETRY_ATTEMPTS: z.coerce.number().default(2),
+  NLP_CONFIDENCE_THRESHOLD: z.coerce.number().default(0.7),
+  
+  // Lido Connect - WebRTC Configuration
+  STUN_SERVERS: z.string().default('stun:stun.l.google.com:19302'),
+  TURN_SERVERS: z.string().default('[]'),
+  RECORDING_ENABLED: z.string().default('true'),
+  
+  // Lido Connect - Agent Configuration
+  AGENT_ROUTING_STRATEGY: z.string().default('load-balanced'),
+  AGENT_QUEUE_TIMEOUT: z.coerce.number().default(300),
+  AGENT_MAX_QUEUE_SIZE: z.coerce.number().default(100),
+  
+  // Lido Connect - Limits
+  MAX_MESSAGE_LENGTH: z.coerce.number().default(10000),
+  MAX_ATTACHMENT_SIZE: z.coerce.number().default(52428800),
+  MAX_CALL_DURATION: z.coerce.number().default(3600),
+  MAX_SUGGESTIONS: z.coerce.number().default(3),
 });
 
 const parsed = envSchema.safeParse(process.env);

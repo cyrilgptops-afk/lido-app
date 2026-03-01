@@ -6,7 +6,6 @@
 export { StorageClient, getStorageClient } from './client';
 export { validateStorageConfig } from './config';
 export type {
-  StorageConfig,
   UploadOptions,
   UploadResult,
   DownloadResult,
