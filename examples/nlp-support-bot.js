@@ -21,6 +21,7 @@
  *  product_inquiry → product detail lookup
  *  technical       → bug report / feature request form
  *  escalate        → hand off to human agent
+ *  form_submit     → handles form submissions (context.contentType === 'form_submit')
  *  *               → fallback for unrecognised intents
  */
 
@@ -79,6 +80,8 @@ module.exports = {
       'talk to agent', 'human agent', 'live agent', 'speak to someone',
       'real person', 'escalate', 'connect me',
     ],
+    // form_submit has no keyword phrases — it is triggered only when
+    // context.contentType === 'form_submit' (set by the UI on form submission)
   },
 
   /**
@@ -464,6 +467,96 @@ module.exports = {
           conversationId: context.conversationId,
           timestamp: new Date().toISOString(),
         },
+      };
+    },
+
+    // ── Form submission handler ───────────────────────────────────────────
+    /**
+     * Triggered automatically when the user submits any bot form.
+     *
+     * How it works:
+     *   - The UI sends `contentType: 'form_submit'` + `formData: { _formTitle, ...fields }`
+     *   - The runtime detects this and routes to the `form_submit` intent
+     *   - `context.formData._formTitle` — the form's title (e.g. 'Request a Refund')
+     *   - `context.formData.<fieldName>` — each submitted field value
+     *
+     * Pattern:
+     *   Switch on `context.formData._formTitle` to handle each form differently.
+     */
+    form_submit: async (context, helpers) => {
+      const data  = context.formData ?? {};
+      const title = data._formTitle ?? 'Unknown Form';
+
+      // ── Refund request ────────────────────────────────────────────────
+      if (title === 'Request a Refund') {
+        const orderNumber = helpers.utils.sanitize(data.order_number ?? '');
+        const reasonType  = data.reason_type  ?? 'other';
+        const detail      = helpers.utils.sanitize(data.reason_detail ?? '');
+        const email       = helpers.utils.sanitize(data.contact_email ?? '');
+
+        const reasonLabel = {
+          not_received:  'Item not received',
+          damaged:       'Item damaged / defective',
+          wrong_item:    'Wrong item sent',
+          changed_mind:  'Changed my mind',
+          other:         'Other',
+        }[reasonType] ?? reasonType;
+
+        const summaryTable = helpers.table
+          .setTitle('Refund Request Submitted')
+          .addColumn('field', 'Field', 'text')
+          .addColumn('value', 'Value', 'text')
+          .setRows([
+            { field: 'Order #',        value: orderNumber || '—'    },
+            { field: 'Reason',         value: reasonLabel           },
+            { field: 'Details',        value: detail    || '—'     },
+            { field: 'Contact Email',  value: email     || '—'     },
+          ])
+          .build();
+
+        return {
+          message: `✅ Your refund request for order **${orderNumber || '(no order)'}** has been received. We'll process it within 3-5 business days and send a confirmation to **${email}**.`,
+          table: summaryTable,
+          suggestions: ['Check order status', 'Talk to an agent', 'Back to menu'],
+          metadata: { intent: 'form_submit', formTitle: title, orderNumber, email },
+        };
+      }
+
+      // ── Bug report ────────────────────────────────────────────────────
+      if (title === 'Report a Problem') {
+        const issueTitle = helpers.utils.sanitize(data.title       ?? '');
+        const severity   = data.severity   ?? 'medium';
+        const errorCode  = helpers.utils.sanitize(data.error_code ?? '');
+
+        return {
+          message: `🐛 Bug report **"${issueTitle}"** (severity: ${severity}) has been logged. Our team will investigate and reach out soon.${errorCode ? ` Error code: \`${errorCode}\`` : ''}`,
+          actions: [
+            { type: 'button', label: 'Submit another report', value: 'technical'  },
+            { type: 'button', label: 'Talk to an agent',      value: 'escalate'   },
+          ],
+          suggestions: ['Back to menu', 'Talk to an agent'],
+          metadata: { intent: 'form_submit', formTitle: title, severity, errorCode },
+        };
+      }
+
+      // ── Feature request ───────────────────────────────────────────────
+      if (title === 'Feature Request') {
+        const featureTitle = helpers.utils.sanitize(data.title    ?? '');
+        const priority     = data.priority ?? 'medium';
+
+        return {
+          message: `💡 Feature request **"${featureTitle}"** (priority: ${priority}) has been submitted. Thank you for helping us improve!`,
+          suggestions: ['Submit another idea', 'Back to menu'],
+          metadata: { intent: 'form_submit', formTitle: title, priority },
+        };
+      }
+
+      // ── Generic fallback for any other form ───────────────────────────
+      const fieldCount = Object.keys(data).filter((k) => k !== '_formTitle').length;
+      return {
+        message: `✅ Your **${helpers.utils.sanitize(title)}** submission (${fieldCount} field${fieldCount !== 1 ? 's' : ''}) has been received. We'll be in touch shortly.`,
+        suggestions: ['Back to menu', 'Talk to an agent'],
+        metadata: { intent: 'form_submit', formTitle: title },
       };
     },
 

@@ -45,7 +45,8 @@ function safeParseJSON<T>(value: any, fallback: T): T {
 const SendMessageSchema = z.object({
   conversationId: z.string().uuid().optional(),
   content: z.string().min(1).max(10000),
-  contentType: z.enum(['text', 'attachment']).default('text'),
+  contentType: z.enum(['text', 'attachment', 'form_submit']).default('text'),
+  formData: z.record(z.any()).optional(),
 });
 
 // ─── Bot script executor singleton (per-script cache lives inside executor) ──
@@ -133,6 +134,8 @@ async function downloadBotScript(storageKey: string): Promise<string | null> {
 router.get('/active-bot', authenticate, async (req, res) => {
   try {
     const userUuid = req.user!.sub;
+    const botIdParam = req.query.botId ? Number(req.query.botId) : null;
+
     const userResult = await db.queryOne(
       'SELECT id FROM users WHERE uuid = ? AND deleted_at IS NULL',
       [userUuid],
@@ -157,12 +160,17 @@ router.get('/active-bot', authenticate, async (req, res) => {
       version: string;
       storage_key: string;
     }>(
-      `SELECT bs.id, bs.uuid, bs.name, bs.version, bsv.storage_key
-       FROM bot_scripts bs
-       JOIN bot_script_versions bsv ON bsv.id = bs.deployed_version_id
-       WHERE bs.organization_id = ? AND bs.is_active = TRUE AND bs.deleted_at IS NULL
-       LIMIT 1`,
-      [orgId],
+      botIdParam
+        ? `SELECT bs.id, bs.uuid, bs.name, bs.version, bsv.storage_key
+           FROM bot_scripts bs
+           JOIN bot_script_versions bsv ON bsv.id = bs.deployed_version_id
+           WHERE bs.id = ? AND bs.organization_id = ? AND bs.is_active = TRUE AND bs.deleted_at IS NULL`
+        : `SELECT bs.id, bs.uuid, bs.name, bs.version, bsv.storage_key
+           FROM bot_scripts bs
+           JOIN bot_script_versions bsv ON bsv.id = bs.deployed_version_id
+           WHERE bs.organization_id = ? AND bs.is_active = TRUE AND bs.deleted_at IS NULL
+           LIMIT 1`,
+      botIdParam ? [botIdParam, orgId] : [orgId],
     );
 
     return res.json(successResponse({ bot: bot || null }));
@@ -176,7 +184,7 @@ router.get('/active-bot', authenticate, async (req, res) => {
 
 router.post('/messages', authenticate, async (req, res) => {
   try {
-    const { conversationId, content, contentType } = SendMessageSchema.parse(req.body);
+    const { conversationId, content, contentType, formData } = SendMessageSchema.parse(req.body);
     const userUuid = req.user!.sub;
 
     // Resolve numeric user ID
@@ -205,8 +213,8 @@ router.post('/messages', authenticate, async (req, res) => {
       );
     }
 
-    const conv = await db.queryOne<{ id: number; organization_id: number }>(
-      'SELECT id, organization_id FROM conversations WHERE uuid = ? AND deleted_at IS NULL',
+    const conv = await db.queryOne<{ id: number; organization_id: number; bot_script_id?: number | null }>(
+      'SELECT id, organization_id, bot_script_id FROM conversations WHERE uuid = ? AND deleted_at IS NULL',
       [convUuid],
     );
     if (!conv) {
@@ -239,19 +247,24 @@ router.post('/messages', authenticate, async (req, res) => {
       metadata: Record<string, any>; created_at: string;
     } | null = null;
 
-    // ── Find active deployed bot for this org ────────────────────────────
+    // ── Find the bot for this conversation (specific bot if pinned, else any active) ──
     const botRow = await db.queryOne<{
       id: number;
       uuid: string;
       name: string;
       storage_key: string;
     }>(
-      `SELECT bs.id, bs.uuid, bs.name, bsv.storage_key
-       FROM bot_scripts bs
-       JOIN bot_script_versions bsv ON bsv.id = bs.deployed_version_id
-       WHERE bs.organization_id = ? AND bs.is_active = TRUE AND bs.deleted_at IS NULL
-       LIMIT 1`,
-      [conv.organization_id],
+      conv.bot_script_id
+        ? `SELECT bs.id, bs.uuid, bs.name, bsv.storage_key
+           FROM bot_scripts bs
+           JOIN bot_script_versions bsv ON bsv.id = bs.deployed_version_id
+           WHERE bs.id = ? AND bs.organization_id = ? AND bs.is_active = TRUE AND bs.deleted_at IS NULL`
+        : `SELECT bs.id, bs.uuid, bs.name, bsv.storage_key
+           FROM bot_scripts bs
+           JOIN bot_script_versions bsv ON bsv.id = bs.deployed_version_id
+           WHERE bs.organization_id = ? AND bs.is_active = TRUE AND bs.deleted_at IS NULL
+           LIMIT 1`,
+      conv.bot_script_id ? [conv.bot_script_id, conv.organization_id] : [conv.organization_id],
     );
 
     if (botRow) {
@@ -275,25 +288,32 @@ router.post('/messages', authenticate, async (req, res) => {
           : ['*'];
 
         // ── Try Rasa NLP first (graceful fallback to keyword detection) ───
+        // Skip NLP + keyword detection entirely for form submissions —
+        // always route directly to the 'form_submit' intent handler.
         let nlpIntent: string | null = null;
         let nlpEntities: Array<{ entity: string; value: string }> = [];
         let nlpConfidence: number | undefined;
-        const nlp = await tryGetNLPClient();
-        if (nlp) {
-          const nlpResult = await nlp.parseMessage(content, convUuid).catch(() => null);
-          if (
-            nlpResult?.success &&
-            nlpResult.data &&
-            nlpResult.data.intent.confidence >= communicationConfig.nlp.confidenceThreshold &&
-            availableIntents.includes(nlpResult.data.intent.name)
-          ) {
-            nlpIntent     = nlpResult.data.intent.name;
-            nlpConfidence = nlpResult.data.intent.confidence;
-            nlpEntities   = nlpResult.data.entities.map((e) => ({ entity: e.entity, value: e.value }));
-            logger.info(
-              { intent: nlpIntent, confidence: nlpConfidence, entities: nlpEntities.length },
-              'Intent resolved via Rasa NLP',
-            );
+
+        if (contentType === 'form_submit') {
+          nlpIntent = 'form_submit';
+        } else {
+          const nlp = await tryGetNLPClient();
+          if (nlp) {
+            const nlpResult = await nlp.parseMessage(content, convUuid).catch(() => null);
+            if (
+              nlpResult?.success &&
+              nlpResult.data &&
+              nlpResult.data.intent.confidence >= communicationConfig.nlp.confidenceThreshold &&
+              availableIntents.includes(nlpResult.data.intent.name)
+            ) {
+              nlpIntent     = nlpResult.data.intent.name;
+              nlpConfidence = nlpResult.data.intent.confidence;
+              nlpEntities   = nlpResult.data.entities.map((e) => ({ entity: e.entity, value: e.value }));
+              logger.info(
+                { intent: nlpIntent, confidence: nlpConfidence, entities: nlpEntities.length },
+                'Intent resolved via Rasa NLP',
+              );
+            }
           }
         }
 
@@ -306,6 +326,8 @@ router.post('/messages', authenticate, async (req, res) => {
           conversationId: convUuid,
           messageId: messageUuid,
           userMessage: content,
+          contentType: contentType ?? 'text',
+          formData: formData ?? undefined,
           intent: detectedIntent,
           entities: nlpEntities,
           metadata: {
@@ -461,7 +483,7 @@ router.get('/conversations/:conversationId/messages', authenticate, async (req, 
 router.post('/conversations', authenticate, async (req, res) => {
   try {
     const userUuid = req.user!.sub;
-    const { type, organizationId } = req.body;
+    const { type, organizationId, botScriptId } = req.body;
 
     const userResult = await db.queryOne<{ id: number }>(
       'SELECT id FROM users WHERE uuid = ? AND deleted_at IS NULL',
@@ -482,11 +504,19 @@ router.post('/conversations', authenticate, async (req, res) => {
     }
 
     const uuid = crypto.randomUUID();
-    await db.queryRaw(
-      `INSERT INTO conversations (uuid, user_id, organization_id, type, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'active', NOW(), NOW())`,
-      [uuid, userId, orgId, type ?? 'user_bot'],
-    );
+    if (botScriptId) {
+      await db.queryRaw(
+        `INSERT INTO conversations (uuid, user_id, organization_id, bot_script_id, type, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'active', NOW(), NOW())`,
+        [uuid, userId, orgId, botScriptId, type ?? 'user_bot'],
+      );
+    } else {
+      await db.queryRaw(
+        `INSERT INTO conversations (uuid, user_id, organization_id, type, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'active', NOW(), NOW())`,
+        [uuid, userId, orgId, type ?? 'user_bot'],
+      );
+    }
 
     const convRow = await db.queryOne<{ id: number; uuid: string; type: string; status: string; created_at: string }>(
       'SELECT id, uuid, type, status, created_at FROM conversations WHERE uuid = ?',
@@ -505,12 +535,17 @@ router.post('/conversations', authenticate, async (req, res) => {
     if (convRow) {
       try {
         const greetBotRow = await db.queryOne<{ id: number; name: string; storage_key: string }>(
-          `SELECT bs.id, bs.name, bsv.storage_key
-           FROM bot_scripts bs
-           JOIN bot_script_versions bsv ON bsv.id = bs.deployed_version_id
-           WHERE bs.organization_id = ? AND bs.is_active = TRUE AND bs.deleted_at IS NULL
-           LIMIT 1`,
-          [orgId],
+          botScriptId
+            ? `SELECT bs.id, bs.name, bsv.storage_key
+               FROM bot_scripts bs
+               JOIN bot_script_versions bsv ON bsv.id = bs.deployed_version_id
+               WHERE bs.id = ? AND bs.organization_id = ? AND bs.is_active = TRUE AND bs.deleted_at IS NULL`
+            : `SELECT bs.id, bs.name, bsv.storage_key
+               FROM bot_scripts bs
+               JOIN bot_script_versions bsv ON bsv.id = bs.deployed_version_id
+               WHERE bs.organization_id = ? AND bs.is_active = TRUE AND bs.deleted_at IS NULL
+               LIMIT 1`,
+          botScriptId ? [botScriptId, orgId] : [orgId],
         );
 
         if (greetBotRow) {

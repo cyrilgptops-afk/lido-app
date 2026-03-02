@@ -23,6 +23,9 @@ import {
   FormControlLabel,
   Tooltip,
   Badge,
+  Card,
+  CardActionArea,
+  CardContent,
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
@@ -40,7 +43,20 @@ import {
   type BotMessageMetadata,
   type BotMessagePayload,
 } from '../../lib/api/chat';
+import { botsApi } from '../../lib/api/bots';
+import type { ActiveBot as BotListItem } from '../../lib/api/bots';
 import socketClient from '../../lib/socket';
+import { useRouter } from 'next/router';
+
+// ─ Module-level avatar URL cache (key → { url, expiresAt }) ────────────────
+const _avatarCache = new Map<string, { url: string; expiresAt: number }>();
+async function resolveAvatarUrl(key: string): Promise<string | null> {
+  const cached = _avatarCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.url;
+  const url = await botsApi.getAvatarUrl(key).catch(() => null);
+  if (url) _avatarCache.set(key, { url, expiresAt: Date.now() + 3_600_000 });
+  return url ?? null;
+}
 
 // ─── BotForm ──────────────────────────────────────────────────────────────────
 
@@ -50,7 +66,7 @@ function BotForm({
   onCancel,
 }: {
   form: FormDefinition;
-  onSubmit: (summary: string) => void;
+  onSubmit: (values: Record<string, any>, formTitle: string) => void;
   onCancel: () => void;
 }) {
   const [values, setValues] = useState<Record<string, any>>(() => {
@@ -63,11 +79,7 @@ function BotForm({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const summary = form.fields
-      .filter((f) => !f.disabled)
-      .map((f) => `${f.label}: ${values[f.name] ?? ''}`)
-      .join(', ');
-    onSubmit(`[${form.title}] ${summary}`);
+    onSubmit(values, form.title);
   };
 
   return (
@@ -191,15 +203,20 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
-
   const [isTyping, setIsTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeBot, setActiveBot] = useState<ActiveBot | null>(null);
   const [dismissedForms, setDismissedForms] = useState<Set<string>>(new Set());
 
+  // ─ Multi-bot selector state ─────────────────────────────────────────
+  const [chatBots, setChatBots] = useState<BotListItem[]>([]);
+  const [selectedBotId, setSelectedBotId] = useState<number | null>(null);
+  const [avatarUrls, setAvatarUrls] = useState<Record<number, string>>({});
+  const router = useRouter();
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const socketRef = useRef<any>(null);
-  const seenIds = useRef<Set<string>>(new Set());
+  const socketRef     = useRef<any>(null);
+  const seenIds       = useRef<Set<string>>(new Set());
 
   // ── Scroll helpers ────────────────────────────────────────────────────────
   const scrollToBottom = useCallback(() => {
@@ -208,6 +225,20 @@ export default function ChatPage() {
 
   useEffect(() => { scrollToBottom(); }, [messages, isTyping, scrollToBottom]);
 
+  // ── Auto-select bot from ?botId query param (set by sidebar nav links) ───
+  // Wait for router.isReady so query params are populated before evaluating.
+  useEffect(() => {
+    if (!router.isReady || chatBots.length === 0) return;
+    const botIdParam = router.query.botId ? Number(router.query.botId) : null;
+    if (botIdParam) {
+      setSelectedBotId(botIdParam);
+    } else if (chatBots.length === 1) {
+      // Single bot — skip the picker automatically
+      setSelectedBotId(chatBots[0].id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.isReady, router.query.botId, chatBots.length]);
+
   // ── Keep global suggestion chips up-to-date from last bot reply ──────────
   const refreshSuggestions = useCallback((msgs: Message[]) => {
     const last = [...msgs].reverse().find((m) => m.sender_type === 'bot');
@@ -215,32 +246,83 @@ export default function ChatPage() {
     setSuggestions(Array.isArray(sug) ? sug : []);
   }, []);
 
-  // ── Initialize: active bot + conversation + messages + socket ────────────
+  // ── Load bots list on mount (once) ───────────────────────────────────────
+  // Removing the hasInitialized guard: useRef persists across React 18 Strict
+  // Mode double-invoke (state resets but refs don't), which caused loadBots to
+  // be skipped on the second mount, leaving isLoading=true forever.
   useEffect(() => {
     let mounted = true;
 
-    async function initialize() {
-      try {
-        setIsLoading(true);
+    async function loadBots() {
+      const bots = await botsApi.getActiveBots('chat').then((r) => r.data ?? []).catch(() => []);
+      if (!mounted) return;
+      setChatBots(bots);
+      // Resolve avatars in background (non-blocking)
+      bots.forEach(async (b) => {
+        if (b.avatar_url) {
+          const url = await resolveAvatarUrl(b.avatar_url);
+          if (url && mounted) setAvatarUrls((prev) => ({ ...prev, [b.id]: url }));
+        }
+      });
+      // Always resolve the initial loading state. If a bot will be auto-selected
+      // via the ?botId / single-bot path, the selectedBotId effect will re-set
+      // isLoading=true immediately — this just prevents the spinner getting stuck.
+      if (mounted) setIsLoading(false);
+    }
 
-        // Load the currently deployed bot for this org
-        const bot = await chatApi.getActiveBot().catch(() => null);
+    loadBots();
+    return () => { mounted = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Load conversation + socket for the selected bot ───────────────────────
+  // Runs whenever selectedBotId changes (nav click, bot-picker click, or
+  // auto-selection from ?botId). Creates a fresh conversation pinned to that
+  // specific bot so the correct script handles all messages.
+  useEffect(() => {
+    if (!selectedBotId) return;
+
+    let mounted = true;
+
+    // Tear down any previous socket before starting the new session
+    const prevSock = socketRef.current;
+    if (prevSock) {
+      prevSock.off('chat:message');
+      prevSock.off('chat:typing');
+      socketClient.disconnect();
+      socketRef.current = null;
+    }
+
+    setIsLoading(true);
+    setMessages([]);
+    setConversation(null);
+    setActiveBot(null);
+    setSuggestions([]);
+    setError(null);
+    seenIds.current.clear();
+
+    async function loadBotSession() {
+      try {
+        // Fetch the specific bot's config (name, version badge, storage key)
+        const bot = await chatApi.getActiveBot(selectedBotId!).catch(() => null);
         if (mounted) setActiveBot(bot);
 
-        // Create or reuse a user_bot conversation
-        const conv = await chatApi.createConversation({ type: 'user_bot' });
+        // Create a new conversation pinned to this exact bot
+        const conv = await chatApi.createConversation({
+          type: 'user_bot',
+          botScriptId: selectedBotId!,
+        });
         if (!mounted) return;
         setConversation(conv);
 
-        // Load previous messages (includes bot greeting stored during createConversation)
+        // Load messages (includes the bot greeting stored at conversation creation)
         const msgs = await chatApi.getMessages(conv.uuid);
         if (!mounted) return;
-        // Pre-populate seenIds so Socket.IO never re-adds a message already in history
         msgs.forEach((m) => seenIds.current.add(m.uuid));
         setMessages(msgs);
         refreshSuggestions(msgs);
 
-        // Connect Socket.IO
+        // Connect Socket.IO for this conversation
         const token =
           typeof window !== 'undefined' ? localStorage.getItem('token') ?? '' : '';
         const sock = socketClient.initialize({
@@ -252,9 +334,7 @@ export default function ChatPage() {
         sock.emit('chat:join', { conversationId: conv.uuid });
 
         sock.on('chat:message', (msg: Message) => {
-          if (!mounted) return;
-          // User messages are added optimistically — skip to prevent duplicates
-          if (msg.sender_type === 'user') return;
+          if (!mounted || msg.sender_type === 'user') return;
           setMessages((prev) => {
             if (seenIds.current.has(msg.uuid)) return prev;
             seenIds.current.add(msg.uuid);
@@ -273,14 +353,14 @@ export default function ChatPage() {
 
         setError(null);
       } catch (err: any) {
-        if (mounted) setError(`Failed to initialize chat: ${err?.message ?? String(err)}`);
-        console.error('Chat init error:', err);
+        if (mounted) setError(`Failed to load chat: ${err?.message ?? String(err)}`);
+        console.error('Chat load error:', err);
       } finally {
         if (mounted) setIsLoading(false);
       }
     }
 
-    initialize();
+    loadBotSession();
 
     return () => {
       mounted = false;
@@ -292,7 +372,7 @@ export default function ChatPage() {
         socketRef.current = null;
       }
     };
-  }, [refreshSuggestions]);
+  }, [selectedBotId, refreshSuggestions]);
 
   // ── Send a message (optimistic UI) ───────────────────────────────────────
   const sendMessage = useCallback(
@@ -363,6 +443,10 @@ export default function ChatPage() {
     [conversation, isSending],
   );
 
+  // ── Derived: currently-selected bot + its resolved avatar URL ─────────────
+  const selBot = chatBots.find((b) => b.id === selectedBotId) ?? (chatBots.length === 1 ? chatBots[0] : null);
+  const selBotAvatarUrl: string | undefined = selBot ? (avatarUrls[selBot.id] ?? undefined) : undefined;
+
   // ── Render a single message bubble ───────────────────────────────────────
   const renderMessage = (msg: Message) => {
     const isBot = msg.sender_type === 'bot';
@@ -381,6 +465,7 @@ export default function ChatPage() {
         }}
       >
         <Avatar
+          src={isBot ? selBotAvatarUrl : undefined}
           sx={{
             bgcolor: isBot ? '#696cff' : 'secondary.main',
             width: 34,
@@ -415,9 +500,40 @@ export default function ChatPage() {
           {isBot && meta.form && !dismissedForms.has(msg.uuid) && (
             <BotForm
               form={meta.form}
-              onSubmit={(summary) => {
+              onSubmit={(formValues, formTitle) => {
                 setDismissedForms((p) => new Set(p).add(msg.uuid));
-                sendMessage(summary);
+                // Build a human-readable summary for the chat bubble
+                const summary = meta.form!.fields
+                  .filter((f) => !f.disabled)
+                  .map((f) => `${f.label}: ${formValues[f.name] ?? ''}`)
+                  .join(', ');
+                // Send with structured formData so the bot can parse fields
+                if (!conversation) return;
+                chatApi.sendMessage({
+                  conversationUuid: conversation.uuid,
+                  content: `[${formTitle}] ${summary}`,
+                  contentType: 'form_submit',
+                  formData: { _formTitle: formTitle, ...formValues },
+                }).then((result) => {
+                  const bm = result?.data?.botMessage;
+                  if (bm && !seenIds.current.has(bm.uuid)) {
+                    seenIds.current.add(bm.uuid);
+                    const botMsg: Message = {
+                      uuid: bm.uuid, sender_type: 'bot',
+                      content: bm.content, content_type: bm.content_type,
+                      metadata: bm.metadata, created_at: bm.created_at,
+                    };
+                    setMessages((prev) => { const next = [...prev, botMsg]; refreshSuggestions(next); return next; });
+                  }
+                }).catch(() => {});
+                // Optimistically add the user message bubble
+                const tempId = `temp-form-${Date.now()}`;
+                seenIds.current.add(tempId);
+                setMessages((prev) => [...prev, {
+                  uuid: tempId, sender_type: 'user',
+                  content: `[${formTitle}] ${summary}`,
+                  content_type: 'form_submit', created_at: new Date().toISOString(),
+                }]);
               }}
               onCancel={() => setDismissedForms((p) => new Set(p).add(msg.uuid))}
             />
@@ -477,66 +593,105 @@ export default function ChatPage() {
 
   // ── Main render ───────────────────────────────────────────────────────────
   return (
-    <DashboardLayout>
+    <DashboardLayout fullWindow>
       <Box
         sx={{
-          display: 'flex',
+          display      : 'flex',
           flexDirection: 'column',
-          height: 'calc(100vh - 64px)',
-          px: 3,
-          pt: 2,
-          pb: 0,
+          height       : '100%',
+          px           : 3,
+          pt           : 2,
+          pb           : 0,
         }}
       >
-        {/* ── Header ──────────────────────────────────────────────────────── */}
-        <Box
-          sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5, flexShrink: 0 }}
-        >
-          <SmartToyIcon sx={{ color: '#696cff', fontSize: 28 }} />
-          <Typography
-            variant="h5"
-            sx={{ fontWeight: 700, color: '#566a7f', flexGrow: 1 }}
-          >
-            Lido Connect Chat
-          </Typography>
+        {/* ── Bot selector grid (multiple chat bots, none chosen yet) ────── */}
+        {chatBots.length > 1 && !selectedBotId && (
+          <Box sx={{ flexShrink: 0, mb: 2 }}>
+            <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5, color: '#566a7f' }}>
+              Choose a Chat Assistant
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Select the assistant you want to chat with.
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+              {chatBots.map((bot) => (
+                <Card
+                  key={bot.id}
+                  elevation={0}
+                  sx={{
+                    width: 160,
+                    border: '1px solid #e7e7ff',
+                    borderRadius: 3,
+                    '&:hover': { borderColor: '#696cff', boxShadow: '0 0 0 2px #696cff22' },
+                    transition: 'all .15s',
+                  }}
+                >
+                  <CardActionArea
+                    onClick={() => setSelectedBotId(bot.id)}
+                    sx={{ p: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}
+                  >
+                    <Avatar src={avatarUrls[bot.id]} sx={{ width: 56, height: 56, bgcolor: '#696cff', fontSize: 28 }}>
+                      <SmartToyIcon />
+                    </Avatar>
+                    <CardContent sx={{ p: 0, textAlign: 'center' }}>
+                      <Typography variant="subtitle2" fontWeight={700} sx={{ lineHeight: 1.3 }}>
+                        {bot.display_name || bot.name}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        v{bot.version}
+                      </Typography>
+                    </CardContent>
+                  </CardActionArea>
+                </Card>
+              ))}
+            </Box>
+          </Box>
+        )}
 
-          {activeBot ? (
-            <Tooltip title={`Storage key: ${activeBot.storage_key}`} arrow>
-              <Chip
-                icon={
-                  <FiberManualRecordIcon
-                    sx={{ fontSize: '10px !important', color: '#71dd37 !important' }}
+        {/* ── Header (shown when single bot or one is selected) ────────────── */}
+        {(chatBots.length <= 1 || selectedBotId) && (() => {
+          const selBot = chatBots.find((b) => b.id === selectedBotId) ?? (chatBots.length === 1 ? chatBots[0] : null);
+          return (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5, flexShrink: 0 }}>
+              <Avatar src={selBot ? avatarUrls[selBot.id] : undefined} sx={{ bgcolor: '#696cff', width: 36, height: 36 }}>
+                <SmartToyIcon fontSize="small" />
+              </Avatar>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: '#566a7f', flexGrow: 1 }}>
+                {selBot ? (selBot.display_name || selBot.name) : 'Lido Connect Chat'}
+              </Typography>
+
+              {chatBots.length > 1 && selectedBotId && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => { setSelectedBotId(null); setMessages([]); setConversation(null); }}
+                  sx={{ fontSize: '0.72rem', borderColor: '#e7e7ff', color: '#566a7f',
+                       '&:hover': { borderColor: '#696cff', color: '#696cff' } }}
+                >
+                  Change Bot
+                </Button>
+              )}
+
+              {activeBot ? (
+                <Tooltip title={`Storage key: ${activeBot.storage_key}`} arrow>
+                  <Chip
+                    icon={<FiberManualRecordIcon sx={{ fontSize: '10px !important', color: '#71dd37 !important' }} />}
+                    label={`${activeBot.name} v${activeBot.version}`}
+                    size="small"
+                    sx={{ bgcolor: '#e8fcd4', color: '#71dd37', fontWeight: 600, fontSize: '0.75rem', border: '1px solid #71dd37' }}
                   />
-                }
-                label={`${activeBot.name} v${activeBot.version}`}
-                size="small"
-                sx={{
-                  bgcolor: '#e8fcd4',
-                  color: '#71dd37',
-                  fontWeight: 600,
-                  fontSize: '0.75rem',
-                  border: '1px solid #71dd37',
-                }}
-              />
-            </Tooltip>
-          ) : (
-            <Chip
-              icon={
-                <FiberManualRecordIcon
-                  sx={{ fontSize: '10px !important', color: '#a8b0b9 !important' }}
+                </Tooltip>
+              ) : (
+                <Chip
+                  icon={<FiberManualRecordIcon sx={{ fontSize: '10px !important', color: '#a8b0b9 !important' }} />}
+                  label="No bot active"
+                  size="small"
+                  sx={{ bgcolor: '#f5f5f9', color: '#a8b0b9', fontSize: '0.75rem', border: '1px solid #e0e0e0' }}
                 />
-              }
-              label="No bot active"
-              size="small"
-              sx={{
-                bgcolor: '#f5f5f9',
-                color: '#a8b0b9',
-                fontSize: '0.75rem',
-                border: '1px solid #e0e0e0',
-              }}
-            />
-          )}
-        </Box>
+              )}
+            </Box>
+          );
+        })()}
 
         {/* ── Error banner ────────────────────────────────────────────────── */}
         {error && (
@@ -576,7 +731,12 @@ export default function ChatPage() {
                   gap: 1,
                 }}
               >
-                <SmartToyIcon sx={{ fontSize: 56, color: '#d4d5ff' }} />
+                <Avatar
+                  src={selBotAvatarUrl}
+                  sx={{ width: 72, height: 72, bgcolor: '#d4d5ff', mb: 1 }}
+                >
+                  <SmartToyIcon sx={{ fontSize: 40, color: '#696cff' }} />
+                </Avatar>
                 <Typography variant="h6" color="text.disabled">
                   {activeBot
                     ? `Hi! I'm ${activeBot.name}. How can I help?`

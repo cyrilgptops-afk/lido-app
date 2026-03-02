@@ -94,18 +94,22 @@ export interface ActiveBot {
 export interface SendMessagePayload {
   conversationUuid: string;
   content: string;
+  contentType?: 'text' | 'form_submit' | 'attachment';
+  formData?: Record<string, any>;
 }
 
 export interface CreateConversationPayload {
   type?: string;
+  botScriptId?: number;
 }
 
 // ─── API client ───────────────────────────────────────────────────────────────
 
 export const chatApi = {
-  async getActiveBot(): Promise<ActiveBot | null> {
+  async getActiveBot(botId?: number): Promise<ActiveBot | null> {
     const response = await apiClient.get<{ success: boolean; data: { bot: ActiveBot | null } }>(
-      '/chat/active-bot'
+      '/chat/active-bot',
+      botId ? { params: { botId } } : undefined,
     );
     return response.data?.data?.bot ?? null;
   },
@@ -132,7 +136,12 @@ export const chatApi = {
       data: { messageId: string; conversationId: string; botMessage: BotMessagePayload | null };
     }>(
       '/chat/messages',
-      { conversationId: payload.conversationUuid, content: payload.content }
+      {
+        conversationId: payload.conversationUuid,
+        content: payload.content,
+        ...(payload.contentType ? { contentType: payload.contentType } : {}),
+        ...(payload.formData   ? { formData:    payload.formData    } : {}),
+      }
     );
     return response.data;
   },

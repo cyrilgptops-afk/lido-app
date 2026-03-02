@@ -7,6 +7,14 @@ export interface BotContext {
   conversationId: string;
   messageId: string;
   userMessage: string;
+  /** 'text' | 'form_submit' | 'attachment' */
+  contentType?: string;
+  /**
+   * Populated when contentType === 'form_submit'.
+   * Keys are form field names, values are the submitted values.
+   * Also includes `_formTitle` with the form's title string.
+   */
+  formData?: Record<string, any>;
   intent: string;
   entities: Array<{ entity: string; value: string }>;
   metadata?: Record<string, any>;

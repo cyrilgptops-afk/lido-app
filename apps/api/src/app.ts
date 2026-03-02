@@ -19,6 +19,7 @@ import healthRouter from './routes/health';
 import chatRouter from './routes/chat';
 import callsRouter from './routes/calls';
 import botScriptsRouter from './routes/bot-scripts';
+import appBotRouter from './routes/app-bot';
 
 export function createApp() {
   const app = express();
@@ -50,7 +51,7 @@ export function createApp() {
   // ─── Rate Limiting ──────────────────────────────────────────────────────
   const defaultLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 min
-    max: 200,
+    max: process.env.NODE_ENV === 'production' ? 500 : 2000,
     standardHeaders: true,
     legacyHeaders: false,
     message: { success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests' } },
@@ -87,6 +88,7 @@ export function createApp() {
   app.use('/chat', chatRouter);
   app.use('/calls', callsRouter);
   app.use('/bot-scripts', botScriptsRouter);
+  app.use('/app-bots', appBotRouter);
 
   // ─── Error Handling ─────────────────────────────────────────────────────
   app.use(notFound);

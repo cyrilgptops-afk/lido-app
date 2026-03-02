@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import {
   Box,
@@ -23,6 +23,10 @@ import {
   CircularProgress,
   Tabs,
   Tab,
+  Avatar,
+  ToggleButton,
+  ToggleButtonGroup,
+  Divider,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import UploadIcon from '@mui/icons-material/Upload';
@@ -30,8 +34,15 @@ import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import DownloadIcon from '@mui/icons-material/Download';
 import DeleteIcon from '@mui/icons-material/Delete';
 import HistoryIcon from '@mui/icons-material/History';
+import SettingsIcon from '@mui/icons-material/Settings';
+import SaveIcon from '@mui/icons-material/Save';
+import ChatIcon from '@mui/icons-material/Chat';
+import AppsIcon from '@mui/icons-material/Apps';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
+import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import AdminLayout from '../../../components/layouts/AdminLayout';
 import { botsApi, BotScript, BotVersion, BotDeployment } from '../../../lib/api/bots';
+import type { BotType } from '../../../lib/api/bots';
 
 export default function BotDetailPage() {
   const router = useRouter();
@@ -51,6 +62,17 @@ export default function BotDetailPage() {
   const [uploadChangelog, setUploadChangelog] = useState('');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Settings tab state
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [settingsName, setSettingsName] = useState('');
+  const [settingsDisplayName, setSettingsDisplayName] = useState('');
+  const [settingsDescription, setSettingsDescription] = useState('');
+  const [settingsType, setSettingsType] = useState<BotType>('chat');
+  const [settingsAvatarFile, setSettingsAvatarFile] = useState<File | null>(null);
+  const [settingsAvatarPreview, setSettingsAvatarPreview] = useState<string | null>(null);
+  const [settingsAvatarUrl, setSettingsAvatarUrl] = useState<string | null>(null);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   useEffect(() => {
     if (botId) {
@@ -72,6 +94,19 @@ export default function BotDetailPage() {
       setBot(botResult.data || null);
       setVersions(Array.isArray(versionsResult.data) ? versionsResult.data : []);
       setDeployments(Array.isArray(deploymentsResult.data) ? deploymentsResult.data : []);
+
+      // Populate settings fields
+      const b = botResult.data;
+      if (b) {
+        setSettingsName(b.name ?? '');
+        setSettingsDisplayName(b.display_name ?? '');
+        setSettingsDescription(b.description ?? '');
+        setSettingsType((b.type as BotType) ?? 'chat');
+        // Resolve avatar presigned URL
+        if (b.avatar_url) {
+          botsApi.getAvatarUrl(b.avatar_url).then((url) => { if (url) setSettingsAvatarUrl(url); }).catch(() => {});
+        }
+      }
     } catch (err: any) {
       console.error('Failed to load bot data:', err);
       setError(err.message || 'Failed to load bot data. Please try again.');
@@ -152,6 +187,37 @@ export default function BotDetailPage() {
     }
   };
 
+  const handleSaveSettings = async () => {
+    try {
+      setIsSavingSettings(true);
+      setError(null);
+      await botsApi.updateBot(botId, {
+        name: settingsName.trim() || undefined,
+        display_name: settingsDisplayName.trim() || undefined,
+        description: settingsDescription.trim() || undefined,
+        type: settingsType,
+      });
+      if (settingsAvatarFile) {
+        await botsApi.uploadAvatar(botId, settingsAvatarFile);
+        setSettingsAvatarFile(null);
+      }
+      await loadData();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save settings');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  const handleSettingsAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSettingsAvatarFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => setSettingsAvatarPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+  };
+
   if (isLoading) {
     return (
       <AdminLayout>
@@ -192,28 +258,50 @@ export default function BotDetailPage() {
         {/* Bot Info */}
         <Paper sx={{ p: 3, mb: 3 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Box>
-              <Typography variant="h4" gutterBottom>
-                {bot.name}
-              </Typography>
-              <Typography color="text.secondary" sx={{ mb: 2 }}>
-                {bot.description || 'No description'}
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 2 }}>
-                <Chip label={`Version: ${bot.version}`} />
-                <Chip
-                  label={bot.is_active ? 'Active' : 'Inactive'}
-                  color={bot.is_active ? 'success' : 'default'}
-                />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Avatar
+                src={settingsAvatarUrl ?? undefined}
+                sx={{ width: 56, height: 56, bgcolor: '#696cff' }}
+              >
+                <SmartToyIcon />
+              </Avatar>
+              <Box>
+                <Typography variant="h4" gutterBottom sx={{ mb: 0.5 }}>
+                  {bot.display_name || bot.name}
+                </Typography>
+                {bot.display_name && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                    {bot.name}
+                  </Typography>
+                )}
+                <Typography color="text.secondary" sx={{ mb: 1 }}>
+                  {bot.description || 'No description'}
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                  <Chip label={`v${bot.version}`} size="small" />
+                  <Chip
+                    icon={bot.type === 'application' ? <AppsIcon /> : <ChatIcon />}
+                    label={bot.type === 'application' ? 'Application' : 'Chat'}
+                    size="small"
+                    sx={{
+                      bgcolor: bot.type === 'application' ? '#e8f4fd' : '#f0f0ff',
+                      color: bot.type === 'application' ? '#2196f3' : '#696cff',
+                      fontWeight: 600,
+                      '& .MuiChip-icon': { fontSize: '14px !important' },
+                    }}
+                  />
+                  <Chip
+                    label={bot.is_active ? 'Active' : 'Inactive'}
+                    color={bot.is_active ? 'success' : 'default'}
+                    size="small"
+                  />
+                </Box>
               </Box>
             </Box>
             <Button
               variant="contained"
               startIcon={<UploadIcon />}
-              onClick={() => {
-                setError(null);
-                setUploadDialogOpen(true);
-              }}
+              onClick={() => { setError(null); setUploadDialogOpen(true); }}
             >
               Upload New Version
             </Button>
@@ -225,6 +313,7 @@ export default function BotDetailPage() {
           <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
             <Tab label="Versions" />
             <Tab label="Deployment History" icon={<HistoryIcon />} iconPosition="start" />
+            <Tab label="Settings" icon={<SettingsIcon />} iconPosition="start" />
           </Tabs>
         </Box>
 
@@ -355,6 +444,114 @@ export default function BotDetailPage() {
               </TableBody>
             </Table>
           </TableContainer>
+        )}
+
+        {/* Settings Tab */}
+        {tabValue === 2 && (
+          <Paper sx={{ p: 4, maxWidth: 640 }}>
+            <Typography variant="h6" fontWeight={700} sx={{ mb: 3 }}>
+              Bot Settings
+            </Typography>
+
+            {/* Type */}
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+              Bot Type
+            </Typography>
+            <ToggleButtonGroup
+              value={settingsType}
+              exclusive
+              onChange={(_, v) => v && setSettingsType(v as BotType)}
+              size="small"
+              sx={{ mb: 1 }}
+            >
+              <ToggleButton value="chat" sx={{ gap: 1 }}>
+                <ChatIcon fontSize="small" />Chat Bot
+              </ToggleButton>
+              <ToggleButton value="application" sx={{ gap: 1 }}>
+                <AppsIcon fontSize="small" />Application
+              </ToggleButton>
+            </ToggleButtonGroup>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 3 }}>
+              {settingsType === 'chat'
+                ? 'Runs inside the Chat page.'
+                : 'Launches from the Applications page.'}
+            </Typography>
+
+            <Divider sx={{ mb: 3 }} />
+
+            {/* Avatar */}
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
+              Avatar
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+              <Avatar
+                src={settingsAvatarPreview ?? settingsAvatarUrl ?? undefined}
+                sx={{ width: 72, height: 72, bgcolor: '#696cff', cursor: 'pointer' }}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <SmartToyIcon sx={{ fontSize: 36 }} />
+              </Avatar>
+              <Box>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<PhotoCameraIcon />}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {settingsAvatarFile ? 'Change Image' : 'Upload Image'}
+                </Button>
+                {settingsAvatarFile && (
+                  <Typography variant="caption" display="block" sx={{ mt: 0.5, color: 'text.secondary' }}>
+                    {settingsAvatarFile.name}
+                  </Typography>
+                )}
+              </Box>
+              <input
+                ref={fileInputRef}
+                type="file"
+                hidden
+                accept="image/*"
+                onChange={handleSettingsAvatarChange}
+              />
+            </Box>
+
+            <Divider sx={{ mb: 3 }} />
+
+            <TextField
+              fullWidth
+              label="Bot Name"
+              value={settingsName}
+              onChange={(e) => setSettingsName(e.target.value)}
+              sx={{ mb: 3 }}
+              helperText="Internal identifier name"
+            />
+            <TextField
+              fullWidth
+              label="Display Name"
+              value={settingsDisplayName}
+              onChange={(e) => setSettingsDisplayName(e.target.value)}
+              sx={{ mb: 3 }}
+              helperText="Friendly name shown to users"
+            />
+            <TextField
+              fullWidth
+              label="Description"
+              value={settingsDescription}
+              onChange={(e) => setSettingsDescription(e.target.value)}
+              multiline
+              rows={3}
+              sx={{ mb: 4 }}
+            />
+
+            <Button
+              variant="contained"
+              startIcon={<SaveIcon />}
+              onClick={handleSaveSettings}
+              disabled={isSavingSettings}
+            >
+              {isSavingSettings ? 'Saving...' : 'Save Settings'}
+            </Button>
+          </Paper>
         )}
 
         {/* Upload Dialog */}
