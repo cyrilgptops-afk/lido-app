@@ -1,4 +1,4 @@
-import Head from "next/head";
+﻿import Head from "next/head";
 import {
   Box,
   Typography,
@@ -7,7 +7,15 @@ import {
   TextField,
   Button,
   Divider,
-  Stack
+  Stack,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  FormControlLabel,
+  Switch,
+  Slider,
+  FormHelperText
 } from "@mui/material";
 import DashboardLayout from "../../components/layouts/DashboardLayout";
 
@@ -46,10 +54,52 @@ export default function SettingsPage() {
                     size="small"
                     fullWidth
                   />
+                  <FormControl size="small" fullWidth>
+                    <InputLabel id="timezone-label">Default timezone</InputLabel>
+                    <Select labelId="timezone-label" label="Default timezone" defaultValue="UTC">
+                      <MenuItem value="UTC">UTC</MenuItem>
+                      <MenuItem value="America/New_York">America/New York</MenuItem>
+                      <MenuItem value="Europe/London">Europe/London</MenuItem>
+                      <MenuItem value="Asia/Calcutta">Asia/Calcutta</MenuItem>
+                    </Select>
+                    <FormHelperText>Used for scheduled automations.</FormHelperText>
+                  </FormControl>
                   <Box>
                     <Button variant="contained" color="primary">
                       Save changes
                     </Button>
+                  </Box>
+                </Stack>
+              </CardContent>
+            </Card>
+
+            <Card variant="outlined">
+              <CardContent sx={{ p: 3 }}>
+                <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                  Notifications
+                </Typography>
+                <Divider sx={{ mb: 3 }} />
+                <Stack spacing={2}>
+                  <FormControlLabel
+                    control={<Switch defaultChecked />}
+                    label="Email me for failed runs"
+                  />
+                  <FormControlLabel
+                    control={<Switch />}
+                    label="Notify on deployment changes"
+                  />
+                  <Box>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Alert sensitivity
+                    </Typography>
+                    <Slider
+                      defaultValue={60}
+                      step={10}
+                      marks
+                      min={10}
+                      max={100}
+                      valueLabelDisplay="auto"
+                    />
                   </Box>
                 </Stack>
               </CardContent>

@@ -1,9 +1,10 @@
-import type { AppProps } from "next/app";
+﻿import type { AppProps } from "next/app";
 import Head from "next/head";
 import { CacheProvider, EmotionCache } from "@emotion/react";
 import { ThemeProvider, CssBaseline } from "@mui/material";
 import createEmotionCache from "../lib/createEmotionCache";
 import theme from "../lib/theme";
+import { SnackbarProvider } from "../components/feedback/SnackbarProvider";
 
 // Client-side cache, shared for the whole session of the user in the browser.
 const clientSideEmotionCache = createEmotionCache();
@@ -22,10 +23,12 @@ export default function App({
       <Head>
         <meta name="viewport" content="initial-scale=1, width=device-width" />
       </Head>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <Component {...pageProps} />
-      </ThemeProvider>
+      <SnackbarProvider>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <Component {...pageProps} />
+        </ThemeProvider>
+      </SnackbarProvider>
     </CacheProvider>
   );
 }

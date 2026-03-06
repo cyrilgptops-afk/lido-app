@@ -1,4 +1,4 @@
-import Head from "next/head";
+﻿import Head from "next/head";
 import NextLink from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/router";
@@ -13,19 +13,32 @@ import {
   Link,
   TextField,
   Alert,
+  IconButton,
+  InputAdornment
 } from "@mui/material";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
+import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import axios from "axios";
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("admin@lido.com");
   const [password, setPassword] = useState("password");
+  const [showPassword, setShowPassword] = useState(false);
+  const [touched, setTouched] = useState({ email: false, password: false });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const emailError = touched.email && (!email || !email.includes("@"));
+  const passwordError = touched.password && password.trim().length < 6;
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setTouched({ email: true, password: true });
+    if (!email || !email.includes("@") || password.trim().length < 6) {
+      return;
+    }
     setLoading(true);
     setError("");
 
@@ -33,14 +46,14 @@ export default function LoginPage() {
       const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
       const response = await axios.post(`${baseUrl}/auth/login`, {
         email,
-        password,
+        password
       });
 
       if (response.data.success) {
         const { accessToken, user } = response.data.data;
         localStorage.setItem("token", accessToken);
         localStorage.setItem("user", JSON.stringify(user));
-        
+
         // Redirect based on role
         if (user.role === "admin") {
           router.push("/admin");
@@ -54,6 +67,7 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
   return (
     <>
       <Head>
@@ -100,7 +114,7 @@ export default function LoginPage() {
                   {error}
                 </Alert>
               )}
-              
+
               <form onSubmit={handleLogin}>
                 <Stack spacing={2}>
                   <TextField
@@ -109,17 +123,34 @@ export default function LoginPage() {
                     fullWidth
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    onBlur={() => setTouched((prev) => ({ ...prev, email: true }))}
                     required
-                    helperText="Use admin@lido.com for admin access"
+                    error={emailError}
+                    helperText={emailError ? "Enter a valid email address" : "Use admin@lido.com for admin access"}
                   />
                   <TextField
                     label="Password"
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     fullWidth
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    onBlur={() => setTouched((prev) => ({ ...prev, password: true }))}
                     required
-                    helperText="Any password works in dev mode"
+                    error={passwordError}
+                    helperText={
+                      passwordError
+                        ? "Password must be at least 6 characters"
+                        : "Any password works in dev mode"
+                    }
+                    InputProps={{
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <IconButton onClick={() => setShowPassword((v) => !v)} edge="end">
+                            {showPassword ? <VisibilityOffRoundedIcon /> : <VisibilityRoundedIcon />}
+                          </IconButton>
+                        </InputAdornment>
+                      )
+                    }}
                   />
                   <Button
                     type="submit"

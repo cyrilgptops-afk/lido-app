@@ -9,11 +9,11 @@ export default function FormPanel({
   component,
   onAction,
 }: { component: FormComponent } & AppActionContext) {
-  const { title, intent, fields, submitLabel = 'Submit', cancelIntent } = component;
+  const { title, intent, fields = [], submitLabel = 'Submit', cancelIntent } = component;
 
   const [values, setValues] = useState<Record<string, any>>(() => {
     const init: Record<string, any> = {};
-    fields.forEach((f) => { init[f.name] = f.value ?? (f.type === 'switch' ? false : ''); });
+    fields?.forEach((f) => { init[f.name] = f.value ?? (f.type === 'switch' ? false : ''); });
     return init;
   });
 
@@ -38,7 +38,7 @@ export default function FormPanel({
         </Typography>
       )}
 
-      {fields.map((field) => {
+      {(fields ?? []).map((field) => {
         if (field.type === 'switch') {
           return (
             <FormControlLabel
@@ -136,3 +136,4 @@ export default function FormPanel({
     </Paper>
   );
 }
+

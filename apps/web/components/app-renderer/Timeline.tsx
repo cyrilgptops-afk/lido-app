@@ -12,7 +12,7 @@ const severityColor: Record<string, string> = {
 };
 
 export default function Timeline({ component }: { component: TimelineComponent }) {
-  const { title, items } = component;
+  const { title, items = [] } = component;
 
   return (
     <Box>
@@ -22,7 +22,7 @@ export default function Timeline({ component }: { component: TimelineComponent }
         </Typography>
       )}
 
-      {items.map((item, idx) => {
+      {(items ?? []).map((item, idx) => {
         const IconComp = item.icon ? (MuiIcons as any)[item.icon] : null;
         const dotColor = severityColor[item.color ?? 'default'];
         const isLast = idx === items.length - 1;
@@ -83,3 +83,4 @@ export default function Timeline({ component }: { component: TimelineComponent }
     </Box>
   );
 }
+
