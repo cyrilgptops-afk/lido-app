@@ -30,7 +30,16 @@ export interface DataTableComponent {
   title?      : string;
   columns     : DataTableColumn[];
   rows        : Record<string, any>[];
-  pagination? : { page: number; pageSize: number; total: number; intent: string };
+  pagination? : { page: number; pageSize: number; total: number; intent: string; params?: Record<string, any> };
+  search?     : {
+    /** Current query string (shown in the input as a controlled value) */
+    value?    : string;
+    placeholder?: string;
+    /** Intent to fire when the user submits a search */
+    intent    : string;
+    /** Extra params merged into the intent payload alongside `{ query, page: 1 }` */
+    params?   : Record<string, any>;
+  };
   emptyMessage?: string;
 }
 

@@ -1,8 +1,10 @@
+import fs   from 'fs';
+import path  from 'path';
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/authenticate';
 import { validate } from '../middleware/validate';
-import { successResponse } from '../lib/response';
+import { successResponse, errorResponse } from '../lib/response';
 import { AppError } from '../middleware/errorHandler';
 
 export const botsRouter = Router();
@@ -156,4 +158,63 @@ botsRouter.delete('/:id', authenticate, async (req: Request, res: Response) => {
 
   // TODO: soft-delete in DB (set deletedAt)
   res.json(successResponse({ id, deletedAt: new Date().toISOString() }));
+});
+
+// ─── Log reader ──────────────────────────────────────────────────────────────
+
+const LOGS_DIR = path.join(__dirname, '..', '..', 'logs', 'bots');
+
+/**
+ * GET /bots/logs?date=YYYY-MM-DD
+ * Read a daily NDJSON bot log file and return parsed entries.
+ * Protected by JWT; available to any authenticated user.
+ */
+botsRouter.get('/logs', authenticate, async (req: Request, res: Response) => {
+  // Default to today in UTC
+  const date = typeof req.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)
+    ? req.query.date
+    : new Date().toISOString().slice(0, 10);
+
+  const logFile = path.join(LOGS_DIR, `bot-${date}.log`);
+
+  // List available log dates from the directory
+  let availableDates: string[] = [];
+  try {
+    availableDates = fs
+      .readdirSync(LOGS_DIR)
+      .filter(f => /^bot-\d{4}-\d{2}-\d{2}\.log$/.test(f))
+      .map(f => f.replace('bot-', '').replace('.log', ''))
+      .sort()
+      .reverse();
+  } catch { /* dir may not exist yet */ }
+
+  if (!fs.existsSync(logFile)) {
+    return res.json(successResponse({
+      date,
+      availableDates,
+      entries : [],
+      summary : { total: 0, loads: 0, executions: 0, fetches: 0, scriptLogs: 0, errors: 0 },
+    }));
+  }
+
+  const raw     = fs.readFileSync(logFile, 'utf-8');
+  const entries = raw
+    .split('\n')
+    .filter(Boolean)
+    .map(line => {
+      try { return JSON.parse(line); }
+      catch { return null; }
+    })
+    .filter(Boolean);
+
+  const summary = {
+    total      : entries.length,
+    loads      : entries.filter((e: any) => e.event === 'bot.load').length,
+    executions : entries.filter((e: any) => e.event === 'bot.execute').length,
+    fetches    : entries.filter((e: any) => e.event === 'bot.fetch').length,
+    scriptLogs : entries.filter((e: any) => e.event === 'bot.script_log').length,
+    errors     : entries.filter((e: any) => e.success === false).length,
+  };
+
+  return res.json(successResponse({ date, availableDates, entries, summary }));
 });

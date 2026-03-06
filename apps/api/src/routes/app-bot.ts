@@ -20,9 +20,11 @@ import type { BotContext }               from '@lido/connect';
 
 const router   = Router();
 
-// Separate executor instance so app-bot cache never collides with chat cache
+// Separate executor instance so app-bot cache never collides with chat cache.
+// App bots can perform multi-page API calls so allow a longer execution window.
 const executor = new BotScriptExecutor(db, logger, {
-  logsDir: path.join(__dirname, '..', '..', 'logs', 'bots'),
+  logsDir           : path.join(__dirname, '..', '..', 'logs', 'bots'),
+  executionTimeoutMs: 30_000, // 30 s — allows fetching many API pages
 });
 
 const ExecuteSchema = z.object({

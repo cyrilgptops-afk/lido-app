@@ -1,4 +1,5 @@
 import path from 'path';
+import * as vm from 'vm';
 import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate, requireRole } from '../middleware/authenticate';
@@ -178,10 +179,16 @@ router.post('/:id/versions', authenticate, requireRole('admin'), upload.single('
       });
     }
 
-    // Validate syntax (basic check)
+    // Validate syntax using vm.Script — parses without executing.
+    // Wrap in a CommonJS-like function so that top-level `return`, `module`,
+    // `exports`, `require`, and `console` are all legal — exactly the
+    // environment the executor provides at runtime.
     const scriptContent = req.file.buffer.toString('utf-8');
     try {
-      new Function(scriptContent); // Quick syntax check
+      new vm.Script(
+        `(function(module, exports, require, console, logger, fetch, Headers, Request, Response) {\n${scriptContent}\n})`,
+        { filename: 'syntax-check.js' },
+      );
     } catch (syntaxError) {
       return res.status(400).json({
         success: false,

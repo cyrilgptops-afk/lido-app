@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import {
@@ -18,6 +18,7 @@ import DashboardLayout from '../../components/layouts/DashboardLayout';
 import AppRenderer     from '../../components/app-renderer/AppRenderer';
 import { appBotsApi }  from '../../lib/api/app-bots';
 import { botsApi }     from '../../lib/api/bots';
+import { useBotUrlState, parseUrlState } from '../../lib/bot/useBotUrlState';
 import type { AppBotInfo, AppBotExecuteResult } from '../../lib/api/app-bots';
 import type { AppComponent } from '../../components/app-renderer/types';
 
@@ -38,11 +39,22 @@ export default function AppBotPage() {
   // effect never fires with a null/NaN value.
   const [botId, setBotId] = useState<number | null>(null);
 
+  // URL state helpers — persist current intent+params in query string
+  const { saveToUrl, clearUrl } = useBotUrlState();
+
+  // Captures the URL-restored screen state synchronously before botId is set,
+  // so the load effect can replay it without stale-closure issues.
+  const pendingRestoreRef = useRef<{ intent: string; params: Record<string, any> } | null>(null);
+
   useEffect(() => {
     if (!router.isReady) return;
     const id = Number(router.query.botId);
-    if (id > 0) setBotId(id);
-  }, [router.isReady, router.query.botId]);
+    if (id > 0) {
+      // Capture any screen state encoded in the URL before triggering the load
+      pendingRestoreRef.current = parseUrlState(router.query);
+      setBotId(id);
+    }
+  }, [router.isReady, router.query.botId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [botInfo,    setBotInfo]    = useState<AppBotInfo | null>(null);
   const [avatarUrl,  setAvatarUrl]  = useState<string | null>(null);
@@ -68,10 +80,16 @@ export default function AppBotPage() {
 
     (async () => {
       try {
-        // Fetch bot info and execute init in parallel
+        // Restore the screen the user was on before the refresh (if any)
+        const restore = pendingRestoreRef.current;
+        pendingRestoreRef.current = null; // consume
+        const startIntent = restore?.intent ?? 'init';
+        const startParams = restore?.params ?? {};
+
+        // Fetch bot info and execute the restored (or init) intent in parallel
         const [info, result] = await Promise.all([
           appBotsApi.getBot(botId),
-          appBotsApi.execute(botId, 'init'),
+          appBotsApi.execute(botId, startIntent, startParams),
         ]);
 
         if (!mounted) return;
@@ -105,16 +123,23 @@ export default function AppBotPage() {
         const result: AppBotExecuteResult = await appBotsApi.execute(botId, intent, params);
         setLayout(result.layout ?? []);
         setMessage(result.message ?? null);
+        // Persist current screen in URL so F5 restores the same view.
+        // For non-persisted intents (init, refresh_token) clear stale params instead.
+        if (intent === 'init' || intent === 'refresh_token') {
+          clearUrl();
+        } else {
+          saveToUrl(intent, params ?? {});
+        }
       } catch (err: any) {
         setError(err.message ?? 'Action failed');
       } finally {
         setIsActing(false);
       }
     },
-    [botId, isActing],
+    [botId, isActing, saveToUrl, clearUrl],
   );
 
-  const handleRefresh = () => handleAction('init');
+  const handleRefresh = useCallback(() => handleAction('init'), [handleAction]);
 
   const pageTitle = botInfo
     ? (botInfo.display_name || botInfo.name)

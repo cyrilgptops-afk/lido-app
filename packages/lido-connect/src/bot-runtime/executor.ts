@@ -24,14 +24,15 @@ export class BotScriptExecutor {
   private logger?: any;
   private db: any;
   private scriptCache: Map<string, BotScriptModule> = new Map();
-  private readonly EXECUTION_TIMEOUT = 5000; // 5 seconds
+  private readonly EXECUTION_TIMEOUT: number;
   private readonly ALLOWED_MODULES = ['crypto', 'util'];
   /** File-based structured logger — one JSON line per event */
   private readonly botLogger = getBotLogger();
 
-  constructor(db: any, logger?: any, botLoggerOptions?: BotLoggerOptions) {
+  constructor(db: any, logger?: any, botLoggerOptions?: BotLoggerOptions & { executionTimeoutMs?: number }) {
     this.db = db;
     this.logger = logger;
+    this.EXECUTION_TIMEOUT = botLoggerOptions?.executionTimeoutMs ?? 5000;
     // Re-init the singleton with the caller's options (logsDir, pinoLogger)
     // on first construction so the API gateway can control the log directory.
     if (botLoggerOptions || logger) {
@@ -54,6 +55,33 @@ export class BotScriptExecutor {
           error: (...args: any[]) => this.logger?.error({ botId }, ...args),
           warn: (...args: any[]) => this.logger?.warn({ botId }, ...args),
         },
+        // Structured logger available inside bot scripts as `logger`
+        // Writes to the rolling bot log file (logs/bots/bot-YYYY-MM-DD.log)
+        logger: {
+          info:  (message: string, meta?: Record<string, unknown>) => this.botLogger.logScript({ botId, level: 'info',  message, meta }),
+          warn:  (message: string, meta?: Record<string, unknown>) => this.botLogger.logScript({ botId, level: 'warn',  message, meta }),
+          error: (message: string, meta?: Record<string, unknown>) => this.botLogger.logScript({ botId, level: 'error', message, meta }),
+          debug: (message: string, meta?: Record<string, unknown>) => this.botLogger.logScript({ botId, level: 'debug', message, meta }),
+        },
+        // Instrumented fetch — logs method, URL, status and latency to the bot log file
+        fetch: async (input: string | URL | Request, init?: RequestInit) => {
+          const url    = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+          const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+          const t0     = Date.now();
+          try {
+            const res     = await globalThis.fetch(input, init);
+            const latency = Date.now() - t0;
+            this.botLogger.logFetch({ botId, method, url, status: res.status, latencyMs: latency, success: res.ok });
+            return res;
+          } catch (err: any) {
+            const latency = Date.now() - t0;
+            this.botLogger.logFetch({ botId, method, url, latencyMs: latency, success: false, error: err?.message });
+            throw err;
+          }
+        },
+        Headers:  globalThis.Headers,
+        Request:  globalThis.Request,
+        Response: globalThis.Response,
       };
 
       // Compile script

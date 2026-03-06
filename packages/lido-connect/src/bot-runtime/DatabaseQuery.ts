@@ -16,10 +16,15 @@ export class DatabaseQuery {
     // Core platform tables
     'users',
     'organizations',
+    'roles',
     'bots',
     'user_organizations',
     'conversations',
     'messages',
+    // Bot script management tables
+    'bot_scripts',
+    'bot_script_versions',
+    'bot_execution_logs',
     // Commerce tables (used by support / e-commerce bots)
     'orders',
     'order_items',
@@ -48,7 +53,7 @@ export class DatabaseQuery {
     }
 
     // Force organization_id filter for tables that have that column
-    const orgFilteredTables = ['bots', 'conversations', 'orders', 'order_items', 'products', 'invoices'];
+    const orgFilteredTables = ['bots', 'bot_scripts', 'bot_script_versions', 'conversations', 'orders', 'order_items', 'products', 'invoices'];
     if (orgFilteredTables.includes(table)) {
       where.organization_id = this.context.organizationId;
     }
@@ -58,7 +63,7 @@ export class DatabaseQuery {
     }
 
     // Force deleted_at IS NULL for soft-delete tables
-    const softDeleteTables = ['users', 'organizations', 'bots'];
+    const softDeleteTables = ['users', 'organizations', 'bots', 'bot_scripts'];
     if (softDeleteTables.includes(table)) {
       where.deleted_at = null;
     }
@@ -116,7 +121,7 @@ export class DatabaseQuery {
     }
 
     // Force organization filter — same rules as select()
-    const orgFilteredTables = ['bots', 'conversations', 'orders', 'order_items', 'products', 'invoices'];
+    const orgFilteredTables = ['bots', 'bot_scripts', 'bot_script_versions', 'conversations', 'orders', 'order_items', 'products', 'invoices'];
     if (orgFilteredTables.includes(table)) {
       where.organization_id = this.context.organizationId;
     }

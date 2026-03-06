@@ -2,7 +2,10 @@ import React, { useState } from 'react';
 import {
   Box, Typography, Table, TableHead, TableRow, TableCell, TableBody,
   Chip, IconButton, Tooltip, TablePagination, Paper,
+  InputAdornment, TextField,
 } from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
+import ClearIcon from '@mui/icons-material/Clear';
 import type { DataTableComponent, AppActionContext } from './types';
 
 const CHIP_COLORS: Record<string, { bg: string; color: string }> = {
@@ -21,17 +24,73 @@ export default function DataTable({
   component,
   onAction,
 }: { component: DataTableComponent } & AppActionContext) {
-  const { title, columns, rows, pagination, emptyMessage } = component;
+  const { title, columns, rows, pagination, search, emptyMessage } = component;
   const [page, setPage] = useState(0);
+  const [searchQuery, setSearchQuery] = useState(search?.value ?? '');
 
-  const displayRows = pagination ? rows : rows;
+  const handleSearchSubmit = () => {
+    if (!search) return;
+    onAction(search.intent, { ...(search.params ?? {}), query: searchQuery, page: 1 });
+  };
+
+  const handleSearchClear = () => {
+    setSearchQuery('');
+    if (!search) return;
+    onAction(search.intent, { ...(search.params ?? {}), query: '', page: 1 });
+  };
+
+  const displayRows = rows;
 
   return (
     <Box>
-      {title && (
-        <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5, color: '#566a7f' }}>
-          {title}
-        </Typography>
+      {/* Title + search bar row */}
+      {(title || search) && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5, flexWrap: 'wrap' }}>
+          {title && (
+            <Typography variant="subtitle1" fontWeight={700} sx={{ color: '#566a7f', flexGrow: 1 }}>
+              {title}
+            </Typography>
+          )}
+          {search && (
+            <TextField
+              size="small"
+              variant="outlined"
+              placeholder={search.placeholder ?? 'Search…'}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSearchSubmit(); }}
+              sx={{
+                minWidth: 220,
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 2,
+                  fontSize: '0.82rem',
+                  bgcolor: '#f8f8ff',
+                  '& fieldset': { borderColor: '#e7e7ff' },
+                  '&:hover fieldset': { borderColor: '#696cff' },
+                  '&.Mui-focused fieldset': { borderColor: '#696cff' },
+                },
+              }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon
+                      sx={{ fontSize: 18, color: '#696cff', cursor: 'pointer' }}
+                      onClick={handleSearchSubmit}
+                    />
+                  </InputAdornment>
+                ),
+                endAdornment: searchQuery ? (
+                  <InputAdornment position="end">
+                    <ClearIcon
+                      sx={{ fontSize: 16, color: '#a8b0b9', cursor: 'pointer' }}
+                      onClick={handleSearchClear}
+                    />
+                  </InputAdornment>
+                ) : undefined,
+              }}
+            />
+          )}
+        </Box>
       )}
 
       <Paper elevation={0} sx={{ border: '1px solid #e7e7ff', borderRadius: 2, overflow: 'hidden' }}>
@@ -141,7 +200,7 @@ export default function DataTable({
             page={pagination.page - 1}
             rowsPerPage={pagination.pageSize}
             rowsPerPageOptions={[pagination.pageSize]}
-            onPageChange={(_e, p) => onAction(pagination.intent, { page: p + 1 })}
+            onPageChange={(_e, p) => onAction(pagination.intent, { ...(pagination.params ?? {}), page: p + 1 })}
             sx={{ borderTop: '1px solid #e7e7ff' }}
           />
         )}

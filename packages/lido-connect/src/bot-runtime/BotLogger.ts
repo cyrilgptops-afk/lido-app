@@ -28,7 +28,7 @@ export interface BotLogEntry {
   /** ISO-8601 timestamp */
   ts: string;
   /** Event type */
-  event: 'bot.load' | 'bot.execute' | 'bot.error' | 'bot.intent_fallback' | 'bot.db_error';
+  event: 'bot.load' | 'bot.execute' | 'bot.error' | 'bot.intent_fallback' | 'bot.db_error' | 'bot.script_log' | 'bot.fetch';
   botId: string;
   botName?: string;
   version?: string;
@@ -155,6 +155,44 @@ export class BotLogger {
       conversationId: params.context.conversationId,
       operation:      params.operation,
       error:          params.error,
+    });
+  }
+
+  /**
+   * Log a console/logger call made from inside a bot script.
+   * level: 'info' | 'warn' | 'error' | 'debug'
+   */
+  logScript(params: { botId: string; level: string; message: string; meta?: Record<string, unknown> }): void {
+    this.write({
+      event:   'bot.script_log',
+      botId:   params.botId,
+      level:   params.level,
+      message: params.message,
+      ...(params.meta ?? {}),
+    });
+  }
+
+  /**
+   * Log an outbound fetch call made from inside a bot script.
+   */
+  logFetch(params: {
+    botId:     string;
+    method:    string;
+    url:       string;
+    status?:   number;
+    latencyMs: number;
+    success:   boolean;
+    error?:    string;
+  }): void {
+    this.write({
+      event:     'bot.fetch',
+      botId:     params.botId,
+      method:    params.method,
+      url:       params.url,
+      ...(params.status != null ? { status: params.status } : {}),
+      latencyMs: params.latencyMs,
+      success:   params.success,
+      ...(params.error ? { error: params.error } : {}),
     });
   }
 
