@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
 import {
   Box,
@@ -30,9 +31,13 @@ import {
   MenuItem,
   Checkbox,
   FormControlLabel,
+  Switch,
   ToggleButton,
   ToggleButtonGroup,
+  Collapse,
   Divider,
+  Tooltip,
+  Snackbar,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import UploadIcon from '@mui/icons-material/Upload';
@@ -46,6 +51,10 @@ import ChatIcon from '@mui/icons-material/Chat';
 import AppsIcon from '@mui/icons-material/Apps';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
+import FullscreenIcon from '@mui/icons-material/Fullscreen';
+import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AdminLayout, { adminTheme } from '../../../components/layouts/AdminLayout';
 import AppRenderer from '../../../components/app-renderer/AppRenderer';
 import type { AppComponent } from '../../../components/app-renderer/types';
@@ -202,46 +211,22 @@ function ChatPreview({ payload }: { payload: any }) {
   );
 }
 
-function AppPreview({ payload }: { payload: any }) {
-  const layout = Array.isArray(payload?.layout) ? (payload.layout as AppComponent[]) : [];
-  const message = payload?.message ?? null;
-
-  return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      {message && (
-        <Typography variant="body2" color="text.secondary">
-          {message}
-        </Typography>
-      )}
-      {layout.length > 0 ? (
-        <AppRenderer layout={layout} onAction={() => {}} cardWrap />
-      ) : (
-        <Typography color="text.secondary">No application layout to preview.</Typography>
-      )}
-    </Box>
-  );
-}
-
 function PreviewPanel({ payload, mode }: { payload: any; mode: PreviewMode }) {
   if (!payload) {
-    return <Typography color="text.secondary">No preview available.</Typography>;
+    return <Alert severity="info">Run Preview Intent to load content.</Alert>;
   }
-
-  const metaLayout = Array.isArray(payload?.metadata?.layout) ? payload.metadata.layout : null;
-  const effectivePayload = metaLayout && (!payload?.layout || !Array.isArray(payload.layout))
-    ? { ...payload, layout: metaLayout }
-    : payload;
-  const hasLayout = Array.isArray(effectivePayload?.layout) && effectivePayload.layout.length > 0;
-
-  if (hasLayout || mode === 'application') {
+  if (mode === 'application') {
+    if (Array.isArray(payload?.layout) && payload.layout.length > 0) {
+      return <AppRenderer layout={payload.layout as AppComponent[]} />;
+    }
     return (
-      <Stack spacing={1.5}>
-        <AppPreview payload={effectivePayload} />
+      <Stack spacing={1} sx={{ width: '100%' }}>
+        <Alert severity="info">No application layout to preview.</Alert>
+        <ChatPreview payload={payload} />
       </Stack>
     );
   }
-
-  return <ChatPreview payload={effectivePayload} />;
+  return <ChatPreview payload={payload} />;
 }
 
 function DiagnosticsPanel({
@@ -267,7 +252,14 @@ function DiagnosticsPanel({
     </Box>
   );
 }
-
+const AceEditor = dynamic(async () => {
+  const ace = await import('react-ace');
+  await import('ace-builds/src-noconflict/mode-javascript');
+  await import('ace-builds/src-noconflict/theme-github');
+  await import('ace-builds/src-noconflict/ext-language_tools');
+  await import('ace-builds/src-noconflict/worker-javascript');
+  return ace;
+}, { ssr: false });
 export default function BotDetailPage() {
   const router = useRouter();
   const { id } = router.query;
@@ -321,6 +313,16 @@ export default function BotDetailPage() {
   const [selectedVersionId, setSelectedVersionId] = useState<number | ''>('');
   const [isLoadingVersion, setIsLoadingVersion] = useState(false);
   const [autoLoadedDeployed, setAutoLoadedDeployed] = useState(false);
+  const [builderMode, setBuilderMode] = useState<'blocks' | 'code'>('blocks');
+  const [aceLintItems, setAceLintItems] = useState<Array<{ severity: 'error' | 'warning'; message: string }>>([]);
+  const [isBuilderFullscreen, setIsBuilderFullscreen] = useState(false);
+  const [toast, setToast] = useState<{ open: boolean; severity: 'success' | 'error'; message: string }>({
+    open: false,
+    severity: 'success',
+    message: '',
+  });
+  const [isLivePreviewOpen, setIsLivePreviewOpen] = useState(true);
+  const [isLiveEditPreview, setIsLiveEditPreview] = useState(false);
 
   const cardSx = {
     border: `1px solid ${adminTheme.colors.borderLight}`,
@@ -340,14 +342,47 @@ export default function BotDetailPage() {
     color: adminTheme.colors.textDark,
     padding: adminTheme.spacing.tableCellPadding,
     borderBottom: `1px solid ${adminTheme.colors.borderLight}`,
-  };
-
-
+  };
   useEffect(() => {
     if (botId) {
       loadData();
     }
-  }, [botId]);
+  }, [botId]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = window.localStorage.getItem('lido.builder.mode');
+    if (saved === 'code' || saved === 'blocks') setBuilderMode(saved as 'blocks' | 'code');
+    const savedPreview = window.localStorage.getItem('lido.builder.livePreview');
+    if (savedPreview !== null) setIsLivePreviewOpen(savedPreview !== 'false');
+    const savedLiveEdit = window.localStorage.getItem('lido.builder.liveEditPreview');
+    if (savedLiveEdit !== null) setIsLiveEditPreview(savedLiveEdit === 'true');
+  }, []);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('lido.builder.mode', builderMode);
+  }, [builderMode]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('lido.builder.livePreview', String(isLivePreviewOpen));
+    window.localStorage.setItem('lido.builder.liveEditPreview', String(isLiveEditPreview));
+  }, [isLivePreviewOpen, isLiveEditPreview]);
+  useEffect(() => {
+    if (builderMode === 'code') setPreviewSource('js');
+  }, [builderMode]);
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (!isBuilderFullscreen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isBuilderFullscreen]);
+  useEffect(() => {
+    if (builderMode === 'code' && !jsPreviewSource && blocklyCode) {
+      setJsPreviewSource(blocklyCode);
+    }
+  }, [builderMode, jsPreviewSource, blocklyCode]);
 
   const loadData = async () => {
     try {
@@ -387,6 +422,7 @@ export default function BotDetailPage() {
     }
   };
 
+  
   const handleUploadVersion = async () => {
     if (!uploadFile || !uploadVersion.trim()) {
       setError('Version number and script file are required');
@@ -407,9 +443,11 @@ export default function BotDetailPage() {
       setUploadChangelog('');
       setUploadFile(null);
       await loadData();
+      setToast({ open: true, severity: 'success', message: 'Version uploaded successfully' });
     } catch (err: any) {
       console.error('Failed to upload version:', err);
       setError(err.message || 'Failed to upload version');
+      setToast({ open: true, severity: 'error', message: err.message || 'Failed to upload version' });
     } finally {
       setIsUploading(false);
     }
@@ -421,9 +459,11 @@ export default function BotDetailPage() {
     try {
       await botsApi.deployVersion(botId, versionId);
       await loadData();
+      setToast({ open: true, severity: 'success', message: 'Version deployed successfully' });
     } catch (err: any) {
       console.error('Failed to deploy version:', err);
       setError(err.message || 'Failed to deploy version');
+      setToast({ open: true, severity: 'error', message: err.message || 'Failed to deploy version' });
     }
   };
 
@@ -450,9 +490,11 @@ export default function BotDetailPage() {
     try {
       await botsApi.deleteVersion(botId, versionId);
       await loadData();
+      setToast({ open: true, severity: 'success', message: 'Version deleted successfully' });
     } catch (err: any) {
       console.error('Failed to delete version:', err);
       setError(err.message || 'Failed to delete version');
+      setToast({ open: true, severity: 'error', message: err.message || 'Failed to delete version' });
     }
   };
 
@@ -471,8 +513,10 @@ export default function BotDetailPage() {
         setSettingsAvatarFile(null);
       }
       await loadData();
+      setToast({ open: true, severity: 'success', message: 'Settings saved successfully' });
     } catch (err: any) {
       setError(err.message || 'Failed to save settings');
+      setToast({ open: true, severity: 'error', message: err.message || 'Failed to save settings' });
     } finally {
       setIsSavingSettings(false);
     }
@@ -588,7 +632,7 @@ export default function BotDetailPage() {
       if (helper.type === 'js') {
         const code = helper.code || '';
         if (code.trim()) {
-          const fn = new Function('context', 'helpers', 'payload', 'return (async () => {\n' + code + '\n})();');
+          const fn = new Function('context', 'helpers', 'payload', 'return (async () => {\\n' + code + '\\n})();');
           await fn(context, helpers, next);
         }
       }
@@ -599,10 +643,25 @@ export default function BotDetailPage() {
   const handleSaveBuilder = async () => {
     if (!builderVersion.trim()) {
       setError('Version number is required');
+      setToast({ open: true, severity: 'error', message: 'Version number is required' });
       return;
     }
-    if (!blocklyCode.trim()) {
+
+    const isCode = builderMode === 'code';
+    if (isCode) {
+      if (!jsPreviewSource.trim()) {
+        setError('Paste or edit bot JavaScript before saving');
+        setToast({ open: true, severity: 'error', message: 'Paste or edit bot JavaScript before saving' });
+        return;
+      }
+      if (hasCodeErrors) {
+        setError('Fix JavaScript errors before saving');
+        setToast({ open: true, severity: 'error', message: 'Fix JavaScript errors before saving' });
+        return;
+      }
+    } else if (!blocklyCode.trim()) {
       setError('Build the script from Blockly before saving');
+      setToast({ open: true, severity: 'error', message: 'Build the script from Blockly before saving' });
       return;
     }
 
@@ -610,12 +669,16 @@ export default function BotDetailPage() {
       setIsSavingBuilder(true);
       setError(null);
       const fileName = 'bot-' + botId + '-' + builderVersion.trim() + '.js';
-      const xmlEncoded = encodeBlocklyXml(blocklyXml);
-      const fileContents = xmlEncoded ? `/* LIDO_BLOCKLY_XML:${xmlEncoded} */
-${blocklyCode}` : blocklyCode;
+      const xmlEncoded = !isCode ? encodeBlocklyXml(blocklyXml) : '';
+      const fileContents = isCode
+        ? jsPreviewSource
+        : xmlEncoded
+          ? `/* LIDO_BLOCKLY_XML:${xmlEncoded} */\n${blocklyCode}`
+          : blocklyCode;
       const file = new File([fileContents], fileName, {
         type: 'text/javascript',
       });
+
       await botsApi.uploadVersion({
         botId,
         version: builderVersion.trim(),
@@ -625,8 +688,10 @@ ${blocklyCode}` : blocklyCode;
       setBuilderVersion('');
       setBuilderChangelog('');
       await loadData();
+      setToast({ open: true, severity: 'success', message: 'Version saved successfully' });
     } catch (err: any) {
-      setError(err.message || 'Failed to save Blockly build');
+      setError(err.message || 'Failed to save bot version');
+      setToast({ open: true, severity: 'error', message: err.message || 'Failed to save bot version' });
     } finally {
       setIsSavingBuilder(false);
     }
@@ -726,10 +791,11 @@ ${blocklyCode}` : blocklyCode;
     }
   };
 
-  const handleRunJsPreview = async () => {
+  const handleRunJsPreview = async (intentOverride?: string) => {
     try {
       setJsPreviewError(null);
       setJsPreviewPayload(null);
+      setPreviewSource('js');
       if (jsSyntaxError) {
         setJsPreviewError(jsSyntaxError);
         return;
@@ -739,7 +805,18 @@ ${blocklyCode}` : blocklyCode;
       const fn = new Function('module', 'exports', 'require', jsPreviewSource);
       fn(module, exports, () => { throw new Error('require not supported in preview'); });
       const botDef = module.exports?.default ?? module.exports;
-      const intentFn = botDef?.intents?.[jsPreviewIntent];
+      const intents = botDef?.intents ? Object.keys(botDef.intents) : [];
+      setJsPreviewIntents(intents);
+      const requestedIntent = intentOverride ?? jsPreviewIntent;
+      const effectiveIntent = requestedIntent && intents.includes(requestedIntent)
+        ? requestedIntent
+        : (intents[0] || '');
+      if (!effectiveIntent) {
+        setJsPreviewError('Select an intent to preview');
+        return;
+      }
+      if (effectiveIntent !== jsPreviewIntent) setJsPreviewIntent(effectiveIntent);
+      const intentFn = botDef?.intents?.[effectiveIntent];
       if (!intentFn) {
         setJsPreviewError('Intent not found');
         return;
@@ -750,12 +827,26 @@ ${blocklyCode}` : blocklyCode;
       setJsPreviewError(err.message || 'Failed to run preview');
       setJsPreviewPayload(null);
     }
-  };
+  };
+  useEffect(() => {
+    if (!isLiveEditPreview) return;
+    if (previewSource !== 'js') setPreviewSource('js');
+  }, [isLiveEditPreview, previewSource]);
+
+
+  useEffect(() => {
+    if (!isLiveEditPreview) return;
+    if (previewSource !== 'js') return;
+    const handle = setTimeout(() => {
+      handleRunJsPreview();
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [isLiveEditPreview, previewSource, jsPreviewSource, jsPreviewIntent]);
 
   const previewMode: PreviewMode = settingsType === 'application' ? 'application' : 'chat';
   const blockPayload = blockPreviewIntent && previewData?.intents
     ? previewData.intents[blockPreviewIntent]
-    : null;
+    : null;
   useEffect(() => {
     let active = true;
     const run = async () => {
@@ -783,7 +874,8 @@ ${blocklyCode}` : blocklyCode;
   }, [previewSource, blockPayload]);
 
   const previewPayload = previewSource === 'blocks' ? (blockPreviewPayload ?? blockPayload) : jsPreviewPayload;
-  const hasPreviewLayout = Array.isArray(previewPayload?.layout) && previewPayload.layout.length > 0;
+  const hasPreviewLayout = Array.isArray(previewPayload?.layout) && previewPayload.layout.length > 0;
+
   const previewModeLabel = settingsType === 'application'
     ? 'Application'
     : hasPreviewLayout
@@ -801,7 +893,11 @@ ${blocklyCode}` : blocklyCode;
     ...jsErrors.map((message) => ({ severity: 'error', message })),
     ...jsWarnings.map((message) => ({ severity: 'warning', message })),
     ...(jsPreviewError ? [{ severity: 'error', message: jsPreviewError }] : []),
+    ...aceLintItems,
   ];
+  const hasCodeErrors =
+    builderMode === 'code' &&
+    (aceLintItems.some((item) => item.severity === 'error') || Boolean(jsSyntaxError));
 
   if (isLoading) {
     return (
@@ -1147,15 +1243,57 @@ ${blocklyCode}` : blocklyCode;
 
         {/* Builder Tab */}
         {tabValue === 3 && (
-          <Paper sx={{ p: 3 }}>
+          <Paper sx={{ p: 3, ...(isBuilderFullscreen ? { position: 'fixed', inset: 0, zIndex: (theme) => theme.zIndex.drawer + 10, borderRadius: 0, m: 0, bgcolor: adminTheme.colors.bgRow, overflow: 'auto', width: '100vw', height: '100vh', pointerEvents: 'auto' } : {}) }}>
             <Stack spacing={2}>
-              <Box>
-                <Typography variant="h6" fontWeight={700}>
-                  Blockly Builder
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Build visually and generate bot JavaScript.
-                </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: adminTheme.typography.fontWeight.semibold, color: adminTheme.colors.textDark }}>
+                    Builder
+                  </Typography>
+                  <Typography sx={{ fontSize: adminTheme.typography.fontSize.sm, color: adminTheme.colors.textLight }}>
+                    {builderMode === 'blocks' ? 'Build visually with Blockly.' : 'Edit bot JavaScript with linting.'}
+                  </Typography>
+                </Box>
+                <ToggleButtonGroup
+                  value={builderMode}
+                  exclusive
+                  onChange={(_, value) => value && setBuilderMode(value as 'blocks' | 'code')}
+                  size="small"
+                  sx={{
+                    bgcolor: adminTheme.colors.bgRow,
+                    border: `1px solid ${adminTheme.colors.borderLight}`,
+                    borderRadius: adminTheme.spacing.borderRadius,
+                    '& .MuiToggleButton-root': {
+                      px: 1.5,
+                      py: 0.6,
+                      fontSize: adminTheme.typography.fontSize.sm,
+                      textTransform: 'none',
+                      color: adminTheme.colors.textMedium,
+                      border: 0,
+                    },
+                    '& .Mui-selected': {
+                      bgcolor: adminTheme.colors.primaryLight,
+                      color: adminTheme.colors.primary,
+                      fontWeight: adminTheme.typography.fontWeight.medium,
+                    },
+                  }}
+                >
+                  <ToggleButton value="blocks">Blockly</ToggleButton>
+                  <ToggleButton value="code">Code</ToggleButton>
+                </ToggleButtonGroup>
+                <Tooltip title={isBuilderFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+                  <IconButton
+                    size="small"
+                    onClick={() => setIsBuilderFullscreen((prev) => !prev)}
+                    sx={{
+                      ml: 1,
+                      border: `1px solid ${adminTheme.colors.borderLight}`,
+                      bgcolor: adminTheme.colors.bgRow,
+                    }}
+                  >
+                    {isBuilderFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+                  </IconButton>
+                </Tooltip>
               </Box>
 
               <Box
@@ -1165,24 +1303,58 @@ ${blocklyCode}` : blocklyCode;
                   gap: 2,
                 }}
               >
-                <Box sx={{ minHeight: 520, borderRadius: 2, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
-                  <BlocklyEditor
-                    initialXml={blocklyXml}
-                    onXmlChange={(xml) => {
-                      setBlocklyXml(xml);
-                      if (typeof window !== 'undefined') {
-                        window.localStorage.setItem('lido.blockly.' + botId, xml);
-                      }
-                    }}
-                    onCodeChange={(code) => setBlocklyCode(code)}
-                    onPreviewChange={(data) => {
-                      setPreviewData(data);
-                      const keys = data?.intents ? Object.keys(data.intents) : [];
-                      setBlockPreviewIntent((prev) => prev || keys[0] || '');
-                    }}
-                    onDiagnosticsChange={(items) => setBlocklyDiagnostics(items)}
-                  />
-                </Box>
+                {builderMode === 'blocks' ? (
+                  <Box sx={{ minHeight: 520, borderRadius: 2, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
+                    <BlocklyEditor
+                      initialXml={blocklyXml}
+                      onXmlChange={(xml) => {
+                        setBlocklyXml(xml);
+                        if (typeof window !== 'undefined') {
+                          window.localStorage.setItem('lido.blockly.' + botId, xml);
+                        }
+                      }}
+                      onCodeChange={(code) => setBlocklyCode(code)}
+                      onPreviewChange={(data) => {
+                        setPreviewData(data);
+                        const keys = data?.intents ? Object.keys(data.intents) : [];
+                        setBlockPreviewIntent((prev) => prev || keys[0] || '');
+                      }}
+                      onDiagnosticsChange={(items) => setBlocklyDiagnostics(items)}
+                    />
+                  </Box>
+                ) : (
+                  <Stack spacing={1}>
+                    <Box sx={{ minHeight: 520, borderRadius: 2, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
+                      <AceEditor
+                      mode="javascript"
+                      theme="github"
+                      name={`bot-js-editor-${botId}`}
+                      value={jsPreviewSource}
+                      onChange={(value: string) => setJsPreviewSource(value)}
+                      onValidate={(annotations: any[]) => {
+                        const items = (annotations || [])
+                          .filter((a) => a.type === 'error' || a.type === 'warning')
+                          .map((a) => ({
+                            severity: a.type === 'error' ? 'error' : 'warning',
+                            message: `${a.text} (line ${a.row + 1})`,
+                          }));
+                        setAceLintItems(items);
+                      }}
+                      width="100%"
+                      height="520px"
+                      setOptions={{
+                        useWorker: true,
+                        enableBasicAutocompletion: true,
+                        enableLiveAutocompletion: true,
+                        showLineNumbers: true,
+                        tabSize: 2,
+                      }}
+                      editorProps={{ $blockScrolling: true }}
+                    />
+                  </Box>
+                  <DiagnosticsPanel title="Editor Lint" items={aceLintItems} />
+                  </Stack>
+                )}
 
                 <Stack spacing={2}>
                   <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #E5E7EB' }}>
@@ -1191,11 +1363,21 @@ ${blocklyCode}` : blocklyCode;
                         <Typography variant="subtitle2" fontWeight={700}>
                           Live Preview
                         </Typography>
-                        <Chip
-                          size="small"
-                          label={previewModeLabel}
-                          sx={{ bgcolor: '#E8F1FF', color: '#1E5BD8', fontWeight: 600 }}
-                        />
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Chip
+                            size="small"
+                            label={previewModeLabel}
+                            sx={{ bgcolor: '#E8F1FF', color: '#1E5BD8', fontWeight: 600 }}
+                          />
+                          <FormControlLabel
+                            control={<Switch checked={isLiveEditPreview} onChange={(e) => setIsLiveEditPreview(e.target.checked)} size="small" />}
+                            label="Live"
+                            sx={{ m: 0 }}
+                          />
+                          <IconButton size="small" onClick={() => setIsLivePreviewOpen((prev) => !prev)}>
+                            {isLivePreviewOpen ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                          </IconButton>
+                        </Box>
                       </Box>
 
                       <ToggleButtonGroup
@@ -1231,7 +1413,7 @@ ${blocklyCode}` : blocklyCode;
                           <Select
                             label="Intent"
                             value={jsPreviewIntent}
-                            onChange={(e) => setJsPreviewIntent(e.target.value)}
+                            onChange={(e) => { const value = e.target.value; setJsPreviewIntent(value); handleRunJsPreview(value); }}
                           >
                             {jsPreviewIntents.map((intent) => (
                               <MenuItem key={intent} value={intent}>
@@ -1240,142 +1422,163 @@ ${blocklyCode}` : blocklyCode;
                             ))}
                           </Select>
                         </FormControl>
-                      )}
-
-                      <Box
-                        sx={{
-                          border: '1px solid #E5E7EB',
-                          borderRadius: 2,
-                          p: 2,
-                          bgcolor: '#F8FAFC',
-                          minHeight: 340,
-                          maxHeight: 520,
-                          overflow: 'auto',
-                        }}
-                      >
-                        <PreviewPanel payload={previewPayload} mode={previewMode} />
-                      </Box>
-                    </Stack>
-                  </Paper>
-
-                  <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #E5E7EB' }}>
-                    <Stack spacing={1.5}>
-                      <Typography variant="subtitle2" fontWeight={700}>
-                        Builder Output
-                      </Typography>
-                      <TextField
-                        label="Generated JS"
-                        value={blocklyCode}
-                        multiline
-                        minRows={8}
-                        fullWidth
-                        InputProps={{ readOnly: true }}
-                      />
-                      <DiagnosticsPanel title="Block Warnings" items={blockDiagnosticItems} />
-                      <TextField
-                        label="Version"
-                        value={builderVersion}
-                        onChange={(e) => setBuilderVersion(e.target.value)}
-                        placeholder="1.0.0"
-                        fullWidth
-                      />
-                      <TextField
-                        label="Changelog"
-                        value={builderChangelog}
-                        onChange={(e) => setBuilderChangelog(e.target.value)}
-                        fullWidth
-                        multiline
-                        rows={3}
-                      />
-                      <Button
-                        variant="contained"
-                        startIcon={<SaveIcon />}
-                        onClick={handleSaveBuilder}
-                        disabled={isSavingBuilder || !builderVersion.trim()}
-                      >
-                        {isSavingBuilder ? 'Saving...' : 'Save as New Version'}
-                      </Button>
-                    </Stack>
-                  </Paper>
-
-                  <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #E5E7EB' }}>
-                    <Stack spacing={1.5}>
-                      <Typography variant="subtitle2" fontWeight={700}>
-                        JS Preview Loader
-                      </Typography>
-                      <FormControl size="small" fullWidth>
-                        <InputLabel>Load From Version</InputLabel>
-                        <Select
-                          label="Load From Version"
-                          value={selectedVersionId}
-                          onChange={(e) => setSelectedVersionId(e.target.value as number | '')}
-                        >
-                          <MenuItem value="">Select version</MenuItem>
-                          {versions.map((version) => (
-                            <MenuItem key={version.id} value={version.id}>
-                              {version.version}{version.is_deployed ? ' (deployed)' : ''}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                      <Button
-                        variant="outlined"
-                        disabled={!selectedVersionId || isLoadingVersion}
-                        onClick={() => {
-                          if (selectedVersionId) handleLoadVersionScript(Number(selectedVersionId));
-                        }}
-                      >
-                        {isLoadingVersion ? 'Loading...' : 'Load Version'}
-                      </Button>
-                      <TextField
-                        label="Paste Bot JS"
-                        value={jsPreviewSource}
-                        onChange={(e) => setJsPreviewSource(e.target.value)}
-                        multiline
-                        minRows={6}
-                        maxRows={16}
-                        fullWidth
-                        InputProps={{
-                          sx: {
-                            maxHeight: 360,
+                      )}
+                      <Collapse in={isLivePreviewOpen}>
+                        <Box
+                          sx={{
+                            border: '1px solid #E5E7EB',
+                            borderRadius: 2,
+                            p: 2,
+                            bgcolor: '#F8FAFC',
+                            minHeight: 340,
+                            maxHeight: 520,
                             overflow: 'auto',
-                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                          },
-                        }}
-                      />
-                      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                        <Button variant="outlined" onClick={() => handleLoadJsPreview()}>
-                          Load JS
-                        </Button>
-                        <Button variant="text" onClick={() => setJsPreviewSource(blocklyCode)}>
-                          Use Generated JS
-                        </Button>
-                      </Box>
-                      {jsPreviewIntents.length > 0 && (
-                        <FormControl size="small" fullWidth>
-                          <InputLabel>Intent</InputLabel>
-                          <Select
-                            label="Intent"
-                            value={jsPreviewIntent}
-                            onChange={(e) => setJsPreviewIntent(e.target.value)}
-                          >
-                            {jsPreviewIntents.map((intent) => (
-                              <MenuItem key={intent} value={intent}>
-                                {intent}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      )}
-                      <Button variant="contained" onClick={handleRunJsPreview}>
-                        Preview Intent
-                      </Button>
-                      <DiagnosticsPanel title="JS Diagnostics" items={jsDiagnosticItems} />
+                          }}
+                        >
+                          <PreviewPanel payload={previewPayload} mode={previewMode} />
+                        </Box>
+                      </Collapse>
                     </Stack>
                   </Paper>
+                  {!isLiveEditPreview && (
+                    <>
+                      <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #E5E7EB' }}>
+                        <Stack spacing={1.5}>
+                          <Typography variant="subtitle2" fontWeight={700}>
+                            Save New Version
+                          </Typography>
+                          {builderMode === 'blocks' && (
+                            <>
+                              <TextField
+                                label="Generated JS"
+                                value={blocklyCode}
+                                multiline
+                                minRows={8}
+                                fullWidth
+                                InputProps={{ readOnly: true }}
+                              />
+                              <DiagnosticsPanel title="Block Warnings" items={blockDiagnosticItems} />
+                            </>
+                          )}
+                          {builderMode === 'code' && hasCodeErrors && (
+                            <Alert severity="error" variant="outlined">
+                              Fix JavaScript errors before saving.
+                            </Alert>
+                          )}
+                          <TextField
+                            label="Version"
+                            value={builderVersion}
+                            onChange={(e) => setBuilderVersion(e.target.value)}
+                            placeholder="1.0.0"
+                            fullWidth
+                          />
+                          <TextField
+                            label="Changelog"
+                            value={builderChangelog}
+                            onChange={(e) => setBuilderChangelog(e.target.value)}
+                            fullWidth
+                            multiline
+                            rows={3}
+                          />
+                          <Button
+                            variant="contained"
+                            startIcon={<SaveIcon />}
+                            onClick={handleSaveBuilder}
+                            disabled={
+                              isSavingBuilder ||
+                              !builderVersion.trim() ||
+                              (builderMode === 'code' && (hasCodeErrors || !jsPreviewSource.trim())) ||
+                              (builderMode === 'blocks' && !blocklyCode.trim())
+                            }
+                          >
+                            {isSavingBuilder ? 'Saving...' : 'Save as New Version'}
+                          </Button>
+                        </Stack>
+                      </Paper>
+
+                      <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #E5E7EB' }}>
+                        <Stack spacing={1.5}>
+                          <Typography variant="subtitle2" fontWeight={700}>
+                            JS Preview Loader
+                          </Typography>
+                          <FormControl size="small" fullWidth>
+                            <InputLabel>Load From Version</InputLabel>
+                            <Select
+                              label="Load From Version"
+                              value={selectedVersionId}
+                              onChange={(e) => setSelectedVersionId(e.target.value as number | '')}
+                            >
+                              <MenuItem value="">Select version</MenuItem>
+                              {versions.map((version) => (
+                                <MenuItem key={version.id} value={version.id}>
+                                  {version.version}{version.is_deployed ? ' (deployed)' : ''}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                          <Button
+                            variant="outlined"
+                            disabled={!selectedVersionId || isLoadingVersion}
+                            onClick={() => {
+                              if (selectedVersionId) handleLoadVersionScript(Number(selectedVersionId));
+                            }}
+                          >
+                            {isLoadingVersion ? 'Loading...' : 'Load Version'}
+                          </Button>
+                          <TextField
+                            label="Paste Bot JS"
+                            value={jsPreviewSource}
+                            onChange={(e) => setJsPreviewSource(e.target.value)}
+                            multiline
+                            minRows={6}
+                            maxRows={16}
+                            fullWidth
+                            InputProps={{
+                              sx: {
+                                fontFamily:
+                                  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                              },
+                            }}
+                          />
+                          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                            <Button variant="outlined" onClick={() => handleLoadJsPreview()}>
+                              Load JS
+                            </Button>
+                            <Button variant="text" onClick={() => setJsPreviewSource(blocklyCode)}>
+                              Use Generated JS
+                            </Button>
+                          </Box>
+                          {jsPreviewIntents.length > 0 && (
+                            <FormControl size="small" fullWidth>
+                              <InputLabel>Intent</InputLabel>
+                              <Select
+                                label="Intent"
+                                value={jsPreviewIntent}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  setJsPreviewIntent(value);
+                                  handleRunJsPreview(value);
+                                }}
+                              >
+                                {jsPreviewIntents.map((intent) => (
+                                  <MenuItem key={intent} value={intent}>
+                                    {intent}
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                            </FormControl>
+                          )}
+                          <Button variant="contained" onClick={handleRunJsPreview}>
+                            Preview Intent
+                          </Button>
+                          <DiagnosticsPanel title="JS Diagnostics" items={jsDiagnosticItems} />
+                        </Stack>
+                      </Paper>
+                    </>
+                  )}
                 </Stack>
               </Box>
-            </Stack>
+                  </Stack>
           </Paper>
         )}
 
@@ -1438,9 +1641,105 @@ ${blocklyCode}` : blocklyCode;
           </DialogActions>
         </Dialog>
       </Box>
-    </AdminLayout>
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={4000}
+        onClose={() => setToast((t) => ({ ...t, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          severity={toast.severity}
+          variant="filled"
+          onClose={() => setToast((t) => ({ ...t, open: false }))}
+        >
+          {toast.message}
+        </Alert>
+      </Snackbar>
+      </AdminLayout>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

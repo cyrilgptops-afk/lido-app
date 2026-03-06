@@ -16,7 +16,7 @@ export default function AlertBanner({
       severity={severity}
       onClose={dismissible ? () => setDismissed(true) : undefined}
       action={
-        action ? (
+        action && onAction ? (
           <Button
             color="inherit"
             size="small"
@@ -33,3 +33,4 @@ export default function AlertBanner({
     </Alert>
   );
 }
+
