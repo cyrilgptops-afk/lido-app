@@ -4,7 +4,7 @@
   "private": true,
   "description": "Lido SaaS Automation Platform - Monorepo",
   "scripts": {
-    "dev": "concurrently -n \"api,web\" -c \"blue,magenta\" \"npm run dev:api\" \"npm run dev:web\" \"npm run minio\"",
+    "dev": "concurrently -n \"api,web\" -c \"blue,magenta,green\" \"npm run dev:api\" \"npm run dev:web\"",
     "minio": "D:\\Tools\\minio\\minio.exe server D:\\Tools\\minio\\data --console-address \":9001\"",
     "dev:api": "cd apps/api && npm run dev",
     "dev:web": "cd apps/web && npm run dev",

@@ -55,7 +55,9 @@ class MySQLClient {
       throw new Error('MySQL pool not initialized. Call connect() first.');
     }
 
-    const [rows] = await this.pool.execute(sql, values);
+    // Ensure values is always an array for execute()
+    const params = values || [];
+    const [rows] = await this.pool.execute(sql, params);
     return this.parseJSONColumns(rows as any[]) as T[];
   }
 

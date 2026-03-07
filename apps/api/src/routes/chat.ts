@@ -453,6 +453,9 @@ router.get('/conversations/:conversationId/messages', authenticate, async (req, 
       return res.status(403).json(errorResponse('USER_NOT_FOUND', 'User not found'));
     }
 
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 50;
+    const safeOffset = Number.isFinite(offset) && offset >= 0 ? Math.floor(offset) : 0;
+
     const rawMessages = await db.query(
       `SELECT m.uuid, m.content, m.content_type, m.attachment_key, m.sender_type,
               m.nlp_intent, m.nlp_entities, m.nlp_confidence, m.nlp_suggestions, m.metadata, m.created_at
@@ -460,8 +463,8 @@ router.get('/conversations/:conversationId/messages', authenticate, async (req, 
        JOIN conversations c ON m.conversation_id = c.id
        WHERE c.uuid = ? AND c.user_id = ? AND c.deleted_at IS NULL AND m.deleted_at IS NULL
        ORDER BY m.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [conversationId, userResult.id, limit, offset],
+       LIMIT ${safeLimit} OFFSET ${safeOffset}`,
+      [conversationId, userResult.id],
     ) as any[];
 
     // Parse stored JSON fields before sending to client

@@ -42,8 +42,8 @@ router.get('/users', async (req, res, next) => {
     const result = await userRepository.list({
       search: search ? String(search) : undefined,
       status: status as UserStatus | undefined,
-      limit: limit ? Number(limit) : 50,
-      offset: offset ? Number(offset) : 0,
+      limit: limit ? Number(limit) : undefined,
+      offset: offset ? Number(offset) : undefined,
     });
 
     return res.json({ success: true, data: result });

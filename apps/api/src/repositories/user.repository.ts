@@ -219,18 +219,17 @@ export class UserRepository {
     const total = countResult?.total || 0;
 
     // Get users
+    const limit = Number.isFinite(options.limit) && options.limit! > 0 ? Math.floor(options.limit!) : 50;
+    const offset = Number.isFinite(options.offset) && options.offset! >= 0 ? Math.floor(options.offset!) : 0;
+    
     const sql = `
       SELECT * FROM users 
       WHERE ${whereClause}
       ORDER BY created_at DESC
-      LIMIT ? OFFSET ?
+      LIMIT ${limit} OFFSET ${offset}
     `;
 
-    const users = await db.query<User>(sql, [
-      ...values,
-      options.limit || 50,
-      options.offset || 0,
-    ]);
+    const users = await db.query<User>(sql, values);
 
     return { users, total };
   }

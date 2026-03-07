@@ -161,6 +161,9 @@ router.get('/history', authenticate, async (req, res) => {
     const userId = parseInt(req.user!.sub);
     const { limit = '20', offset = '0' } = req.query;
 
+    const safeLimit = Math.floor(parseInt(limit as string)) || 20;
+    const safeOffset = Math.floor(parseInt(offset as string)) || 0;
+
     const calls = await db.query(
       `SELECT c.uuid, c.type, c.status, c.started_at, c.ended_at, c.duration_seconds,
               u.email as agent_email,
@@ -170,8 +173,8 @@ router.get('/history', authenticate, async (req, res) => {
        LEFT JOIN call_ratings cr ON c.id = cr.call_id AND cr.user_id = ?
        WHERE c.initiator_id = ? AND c.deleted_at IS NULL
        ORDER BY c.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [userId, userId, parseInt(limit as string), parseInt(offset as string)]
+       LIMIT ${safeLimit} OFFSET ${safeOffset}`,
+      [userId, userId]
     );
 
     return res.json(successResponse({ calls }));

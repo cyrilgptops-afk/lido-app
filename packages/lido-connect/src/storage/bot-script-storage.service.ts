@@ -291,6 +291,9 @@ export class BotScriptStorageService {
    * Get deployment history
    */
   async getDeploymentHistory(botId: string, limit: number = 10): Promise<any[]> {
+    // Ensure limit is a safe integer
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 10;
+    
     const sql = `
       SELECT d.*, v.version, u.email as deployed_by_email
       FROM bot_script_deployments d
@@ -298,10 +301,10 @@ export class BotScriptStorageService {
       LEFT JOIN users u ON d.deployed_by = u.id
       WHERE d.bot_id = ?
       ORDER BY d.deployed_at DESC
-      LIMIT ?
+      LIMIT ${safeLimit}
     `;
 
-    const rows = await this.db.query(sql, [botId, limit]);
+    const rows = await this.db.query(sql, [botId]);
     return rows;
   }
 

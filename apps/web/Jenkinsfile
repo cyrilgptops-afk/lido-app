@@ -1,0 +1,163 @@
+pipeline {
+    agent any
+    
+    environment {
+        NODE_VERSION = '20'
+        APP_NAME = 'lido-web'
+        DOCKER_REGISTRY = 'docker.io'
+        DOCKER_REPO = 'lidobots/lido-web'
+        DOCKER_IMAGE = "${DOCKER_REPO}:${BUILD_NUMBER}"
+        DOCKER_LATEST = "${DOCKER_REPO}:latest"
+        GIT_REPO = 'https://github.com/lidobots/lido-app.git'
+        NEXT_PUBLIC_API_URL = 'http://localhost:4000'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Checking out code...'
+                git url: "${GIT_REPO}",
+                    branch: "${env.BRANCH_NAME ?: 'main'}",
+                    credentialsId: 'github-pat'
+            }
+        }
+        
+        stage('Install Dependencies') {
+            steps {
+                echo 'Installing dependencies...'
+                dir('apps/web') {
+                    sh 'npm install'
+                }
+            }
+        }
+        
+        stage('Lint') {
+            steps {
+                echo 'Running linter...'
+                dir('apps/web') {
+                    sh 'npm run lint || true'
+                }
+            }
+        }
+        
+        stage('Type Check') {
+            steps {
+                echo 'Running TypeScript type check...'
+                dir('apps/web') {
+                    sh 'npx tsc --noEmit || true'
+                }
+            }
+        }
+        
+        stage('Build Next.js') {
+            steps {
+                echo 'Building Next.js application...'
+                dir('apps/web') {
+                    sh 'npm run build'
+                }
+            }
+        }
+        
+        stage('Docker Build') {
+            steps {
+                echo 'Building Docker image...'
+                dir('apps/web') {
+                    script {
+                        sh "docker build -t ${DOCKER_IMAGE} -t ${DOCKER_LATEST} ."
+                        sh "docker images | grep ${APP_NAME}"
+                    }
+                }
+            }
+        }
+        
+        stage('Docker Push') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                }
+            }
+            steps {
+                echo 'Pushing Docker image to registry...'
+                script {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'docker-registry-credentials',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
+                        sh '''
+                            echo "$DOCKER_PASS" | docker login ${DOCKER_REGISTRY} -u "$DOCKER_USER" --password-stdin
+                            docker push ${DOCKER_IMAGE}
+                        '''
+                        // Push latest tag only on main branch
+                        script {
+                            if (env.BRANCH_NAME == 'main') {
+                                sh "docker push ${DOCKER_LATEST}"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to Dev') {
+            when {
+                branch 'develop'
+            }
+            steps {
+                echo 'Deploying to development environment...'
+                script {
+                    sh '''
+                        docker stop lido-web-dev || true
+                        docker rm lido-web-dev || true
+                        docker run -d \
+                            --name lido-web-dev \
+                            --network lido-network \
+                            -p 3001:3000 \
+                            -e NODE_ENV=development \
+                            -e NEXT_PUBLIC_API_URL=http://localhost:4001 \
+                            ${DOCKER_IMAGE}
+                    '''
+                }
+            }
+        }
+        
+        stage('Deploy to Production') {
+            when {
+                branch 'main'
+            }
+            steps {
+                echo 'Deploying to production environment...'
+                script {
+                    sh '''
+                        docker stop lido-web-prod || true
+                        docker rm lido-web-prod || true
+                        docker run -d \
+                            --name lido-web-prod \
+                            --network lido-network \
+                            -p 3000:3000 \
+                            -e NODE_ENV=production \
+                            -e NEXT_PUBLIC_API_URL=http://localhost:4000 \
+                            --restart unless-stopped \
+                            ${DOCKER_LATEST}
+                    '''
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo 'Pipeline completed successfully!'
+            // Send notification on success
+        }
+        failure {
+            echo 'Pipeline failed!'
+            // Send notification on failure
+        }
+        always {
+            echo 'Cleaning up workspace...'
+            cleanWs()
+        }
+    }
+}
